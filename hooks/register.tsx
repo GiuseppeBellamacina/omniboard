@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, BgTask, Plan, SessionStats, Step } from '../types'
-import { MARK, svgSource, textChain } from './graph'
+import { MARK, layout, svgSource, textChain } from './graph'
 import { add, allowed, applyEdit, describe, mark, newPlan, noteFor, progress } from './plan'
 import type { Edit } from './plan'
 import { elapsed, keyOf, money, projectName, rowOf, tokens, upsert, usageTokens } from './stats'
@@ -22,23 +22,21 @@ const composingA = atom({ plugin: 'omniboard', key: 'composing' } as const, fals
 const TOOL = 'mcp__omniboard__plan'
 const PANE = 'omniboard-plan'
 
-// Fixed text, so the prompt cache keeps it; the live plan travels in tool results and notes instead.
-const GUIDE = `omniboard shows the user your plan as a live checklist. When you carry out an approved plan or any task of three or more steps:
-- first call mcp__omniboard__plan with action "set", a short title and the steps in order;
-- call it with "start" before working on a step and "done" right after finishing it;
-- the user can add, rename, skip or reorder steps while you work: a note tells you, and every result of the tool shows the current plan. Follow the plan as the user left it, including the steps they added.
-Never mark a step done that you did not complete.`
-
+// The guidance lives in the tool's description: it reaches the model even where another plugin keeps
+// system-prompt hooks from running. Fixed text, so the prompt cache keeps it.
 const TOOL_SPEC = {
   name: 'plan',
-  description:
-    'Keep the user\'s live checklist of your plan current. action "set": title + steps (replaces the plan). "start" / "done": a step id. "add": a micro-step after a step id. "get": read the plan, including the user\'s edits.',
+  description: `The user's live checklist of your plan, shown above the prompt and in their board. Use it whenever you carry out an approved plan or any task of three or more steps:
+- first call action "set" with a short title and the steps in order. Steps that run at the same time (for example subagents you start together) go as an inner list: ["Read the code", ["Write the API", "Write the UI"], "Test"]; they get ids like "2a" and "2b";
+- call "start" with a step id before working on it and "done" right after finishing it; "add" puts a micro-step after a step id;
+- the user can add, rename, skip or reorder steps while you work: a note tells you, and every result of this tool shows the current plan ("get" reads it). Follow the plan as the user left it, including the steps they added.
+Never mark a step done that you did not complete.`,
   inputSchema: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['set', 'start', 'done', 'add', 'get'] },
       title: { type: 'string' },
-      steps: { type: 'array', items: { type: 'string' } },
+      steps: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] } },
       id: { type: 'string', description: 'Step id, as listed in the plan (e.g. "3" or "3.1").' },
       after: { type: 'string', description: 'For "add": the step id the new micro-step follows.' },
       text: { type: 'string', description: 'For "add": the micro-step.' },
@@ -89,7 +87,7 @@ async function answerTool($: EngineInterface, input: Record<string, unknown>): P
   let plan = await read($, planA)
   let problem = ''
   if (action === 'set') {
-    const steps = Array.isArray(input.steps) ? input.steps.map(String) : []
+    const steps = Array.isArray(input.steps) ? input.steps.map(s => (Array.isArray(s) ? s.map(String) : String(s))) : []
     if (steps.length === 0) problem = 'Give the steps as a list of strings.'
     else plan = newPlan(String(input.title ?? 'Plan'), steps, now)
   } else if (action !== 'get') {
@@ -165,9 +163,11 @@ function scheduleLive($: EngineInterface) {
 async function writeLive($: EngineInterface) {
   if (!(await read($, boardA))) return
   const plan = await read($, planA)
+  const graph = plan && layout(plan)
   const live = {
     at: await $.clock.now(),
     plan: plan && { ...plan, steps: plan.steps.map(s => ({ ...s, can: allowed(plan, s) })), progress: progress(plan) },
+    graph: graph && { ...graph, boxes: graph.boxes.map(b => ({ id: b.step.id, x: b.x, y: b.y })) },
     agents: await read($, agentsA),
     tasks: await read($, tasksA),
     session: await read($, sessionA),
@@ -251,11 +251,6 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('prompt.compose', async ($, e, next) => {
-    const out = await next(e)
-    return { ...out, sections: [...out.sections, { id: 'omniboard:plan', text: GUIDE, scope: 'session' as const }] }
-  })
-
   // Claude's own checklist tool never asks the user for permission.
   on('tool.check', { tool: TOOL }, () => ({ decision: 'allow' as const }))
 
@@ -281,9 +276,10 @@ export const register: Register = on => {
       plan.steps.forEach((s, i) => (s.status = todos[i]?.status === 'completed' ? 'done' : todos[i]?.status === 'in_progress' ? 'running' : 'pending'))
       await update($, planA, () => plan)
     }
+    // Any shell tool (Bash, PowerShell) that moved its command to the background reports the task's id.
     const background =
-      e.tool === 'Bash' && typeof result?.backgroundTaskId === 'string'
-        ? { id: result.backgroundTaskId, kind: 'shell' as const, label: String((e as { command?: string }).command ?? 'shell') }
+      typeof result?.backgroundTaskId === 'string'
+        ? { id: result.backgroundTaskId, kind: 'shell' as const, label: String((e as { command?: string }).command ?? e.tool) }
         : e.tool === 'Monitor' && typeof result?.taskId === 'string'
           ? { id: result.taskId, kind: 'monitor' as const, label: String((e as { description?: string }).description ?? 'monitor') }
           : String(e.tool) === 'Workflow' && typeof result?.taskId === 'string'
@@ -446,8 +442,9 @@ export const register: Register = on => {
     const stats = session ? `${money(session.cost)} · ${elapsed(session.agentMs)} · ${tokens(session.tokens)} tok` : 'no turn yet'
 
     const header = (
-      <Box flexDirection="row" gap={1}>
-        <Text dimColor wrap="truncate-end">{`── omniboard ${'─'.repeat(Math.max(0, width - 40))}`}</Text>
+      <Box flexDirection="row" alignItems="center" gap={1}>
+        <Text dimColor>── omniboard</Text>
+        <Box flexGrow={1} />
         <Button key="board" plain label="Board" onPress={() => openBoard($)} />
         {plan && <Button key="plan" plain label="Plan" onPress={openPlan} />}
         <Button key="toggle" plain label={expanded ? '▴' : '▾'} onPress={toggle} />
@@ -470,7 +467,7 @@ export const register: Register = on => {
               {'  '}
               {plan.steps
                 .filter(s => !s.parent || s.status !== 'done')
-                .map(s => `${MARK[s.status]} ${s.parent ? s.id + ' ' : ''}${s.text.length > 22 ? s.text.slice(0, 21) + '…' : s.text}`)
+                .map(s => `${s.group ? '∥' : ''}${MARK[s.status]} ${s.parent || s.group ? s.id + ' ' : ''}${s.text.length > 22 ? s.text.slice(0, 21) + '…' : s.text}`)
                 .join('   ')}
             </Text>
           </Box>
@@ -573,6 +570,7 @@ export const register: Register = on => {
                   <Box flexGrow={1}>
                     <Text wrap="truncate-end" dimColor={s.status === 'done' || s.status === 'skipped'}>
                       {s.text}
+                      {s.group ? ' · parallel' : ''}
                       {s.byUser ? ' · added by you' : s.editedByUser ? ' · edited by you' : ''}
                     </Text>
                   </Box>

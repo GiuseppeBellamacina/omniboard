@@ -38,7 +38,7 @@ Expanded, it lists the plan's steps, the running and latest subagents (type, tas
 
 ### `/checklist`: the plan you can edit
 
-A pane inside Claude Code: the plan as a graph (drawn as SVG in VS Code and the desktop app, as text in the terminal) and as a list where each step offers what you may do to it now:
+A pane inside Claude Code: the plan as a graph read top to bottom (drawn as SVG in VS Code and the desktop app, as text in the terminal) and as a list where each step offers what you may do to it now. Steps that run in parallel sit side by side on one row, forking from the step above and joining into the step below, and are marked *parallel*.
 
 - **+ after**: add a micro-step to that step; several micro-steps of one step each get their own row;
 - **edit**: rename a step; **skip** / **restore**; **↑ ↓**: reorder pending steps; **✕**: remove a step you added.
@@ -47,7 +47,7 @@ A pane inside Claude Code: the plan as a graph (drawn as SVG in VS Code and the 
 
 A local page with two tabs.
 
-- **Live**: the plan graph (click a step to edit it, **+** between two steps to add a micro-step, drag a pending step onto another to reorder), the subagents as a tree, and the background tasks. It refreshes every second and a half while the tab is visible.
+- **Live**: the plan graph, top to bottom with parallel steps side by side (click a step to edit it, **+** under a step to add a micro-step to it, drag a pending step onto another to reorder), the subagents as a tree, and the background tasks. It refreshes every second and a half while the tab is visible.
 - **Stats**: sessions, agent time, cost and tokens with sparklines and the change against the previous period; a chart per day stacked by project (Agent time / Cost / Tokens, 7d / 30d / 90d / All); every session in a searchable table; a 12-week activity map, active days, streak, busiest day, longest session and averages. The project list on the left filters everything.
 
 ### `/board-import`
@@ -56,7 +56,7 @@ Adds your past sessions to the statistics, from Claude Code's own transcripts (`
 
 ## How Claude keeps the checklist current
 
-- omniboard gives Claude a tool, `mcp__omniboard__plan`, and one fixed paragraph in its instructions: when it carries out an approved plan or any task of three steps or more, it sets the plan, then marks each step started and done. The tool never asks you for permission.
+- omniboard gives Claude a tool, `mcp__omniboard__plan`, whose description tells it when to use it: when it carries out an approved plan or any task of three steps or more, it sets the plan, then marks each step started and done. Steps it will run at the same time (subagents started together, say) go in as parallel steps, `2a`, `2b`, ... The tool never asks you for permission.
 - When you approve a plan in plan mode, Claude is reminded to load it into the checklist before starting.
 - **Your edits reach Claude for certain**: a short note ("The user changed your plan: added step 4.1 …") plus the updated plan is attached to the result of Claude's very next action, whatever tool it uses, or to your next prompt if it is idle. Claude reads it exactly once.
 - **Claude cannot close the plan past your additions**: marking the last step done is refused while a step you added or changed is still open.
@@ -84,6 +84,7 @@ The two measures of agent time are close but not identical. A transcript without
 
 - **Background tasks**: their end is taken from Claude Code's completion notices and the list it gives at each stop, so a task can show as running for a moment after it ends.
 - **Workflow subagents** are counted in the session's tokens but not listed one by one.
+- **Parallel steps** move together: you can edit, skip or add micro-steps to each branch, but not reorder a branch on its own.
 - **The browser board closes with the Claude Code session** that opened it; `/board` opens it again.
 - **The terminal** has no SVG, so the checklist's graph there is a line of text; the list and its actions are the same.
 

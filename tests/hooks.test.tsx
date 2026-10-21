@@ -79,6 +79,26 @@ test('an edit made in the pane reaches Claude exactly once, on its next action',
   expect(second.context).toBeUndefined()
 })
 
+test('parallel steps come in as an inner list and are marked in the plan Claude reads', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const set = await plan($, { action: 'set', title: 'P', steps: ['read', ['api', 'ui'], 'test'] })
+  expect(String(set.result)).toMatch(/\[ \] 2a api \(parallel with 2b\)/)
+  expect(String(set.result)).toMatch(/\[ \] 2b ui \(parallel with 2a\)/)
+})
+
+test('a command moved to the background by PowerShell shows in the band', async ($, on) => {
+  // Registered before the engine's catch-all answer, so it is the one that answers PowerShell.
+  on('tool.call', { tool: 'PowerShell' } as never, () => ({ result: { stdout: '', backgroundTaskId: 'b304' } }))
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'PowerShell', command: 'node ticker.js', run_in_background: true } as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'toggle' })
+  expect(await ui.find({ type: 'Text', text: /node ticker\.js/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('a done section shows no edit controls in the pane', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
