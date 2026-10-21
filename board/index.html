@@ -94,7 +94,6 @@ button { cursor: pointer }
 .g.running::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--clay) }
 .g.done { background: var(--ink) }
 .g.skipped { border: 1.5px dashed var(--ring-off) }
-.g.failed { background: var(--clay-ink) }
 .g.sm { width: 12px; height: 12px }
 .g.sm.running::after { width: 4px; height: 4px }
 @media (prefers-reduced-motion: no-preference) { .g.running { animation: pulse 2s ease-out infinite } }
@@ -144,7 +143,8 @@ button { cursor: pointer }
 .ed-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-left: 57px }
 .ed-new { display: flex; align-items: center; gap: 12px; padding-left: 27px }
 .editor .hint { padding-left: 57px }
-.editor.mini .ed-acts, .editor.mini .hint, .editor.mini .ed-new { padding-left: 0 }
+.group-ed { list-style: none; margin: 10px 0 0; padding: 0 }
+.group-ed .editor { margin: 0 }
 .field { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--panel); font-size: 14.5px }
 .field:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 10%, transparent) }
 .field.sm { height: 40px; font-size: 13.5px }
@@ -167,6 +167,7 @@ button { cursor: pointer }
 .it.mini:hover .acts, .it.mini:focus-within .acts { display: flex; opacity: 1 }
 .it.mini.running { background: var(--clay-wash); border-color: var(--clay-edge); --g-bg: var(--clay-wash) }
 .it.mini.skipped { border-style: dashed; background: none; --g-bg: var(--sunk) }
+.it.mini.sel { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink) }
 .it.mini.sub { margin-left: 14px; padding-left: 10px }
 .it.mini.sub::before { display: none }
 
@@ -213,14 +214,9 @@ button { cursor: pointer }
 .runs .what { flex: 1; min-width: 0 }
 .runs .name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .runs .sub { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.runs .empty { color: var(--muted) }
 .runs.log li { align-items: baseline }
 .runs .when { width: 44px; flex: none }
 .wait { font-size: 12px; color: var(--clay-ink) }
-.session-title { margin-top: 8px; font-family: var(--serif); font-size: 17px; line-height: 1.3; overflow-wrap: anywhere }
-.session { margin: 14px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; font-size: 13px }
-.session dt { font-size: 12px; color: var(--muted) }
-.session dd { margin: 2px 0 0 }
 
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-radius: 10px; background: var(--ink); color: var(--ground); font-size: 13px; box-shadow: 0 12px 30px -12px var(--shadow); max-width: calc(100vw - 32px) }
 
@@ -325,7 +321,7 @@ th.r, td.r { text-align: right }
         <div id="graph-editor"></div>
       </div>
     </section>
-    <aside class="side" aria-label="Activity">
+    <aside class="side" id="side" aria-label="Activity" hidden>
       <div class="card" id="card-agents" hidden>
         <div class="card-head"><span class="eyebrow">Agents</span><span class="sub" id="agents-sub"></span></div>
         <ul class="runs" id="agents"></ul>
@@ -337,11 +333,6 @@ th.r, td.r { text-align: right }
       <div class="card" id="card-sent" hidden>
         <div class="card-head"><span class="eyebrow">Sent to Claude</span></div>
         <ul class="runs log" id="sent"></ul>
-      </div>
-      <div class="card" id="card-session" hidden>
-        <div class="card-head"><span class="eyebrow">Session</span></div>
-        <div class="session-title" id="session-title"></div>
-        <dl class="session num" id="session"></dl>
       </div>
     </aside>
   </div>
@@ -416,7 +407,7 @@ th.r, td.r { text-align: right }
   };
   var icon = function (n, size, w) { size = size || 16; return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (w || 2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[n] + '</svg>' };
   var GRIP = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>';
-  var glyph = function (status, cls) { return '<span class="g ' + status + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + (status === 'done' ? icon('check', cls ? 7 : 9, 3.5) : status === 'failed' ? icon('x', 7, 3.5) : '') + '</span>' };
+  var glyph = function (status, cls) { return '<span class="g ' + status + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + (status === 'done' ? icon('check', cls ? 7 : 9, 3.5) : '') + '</span>' };
 
   var state = { view: store.get('view', 'live'), mode: store.get('mode', 'outline'), range: store.get('range', 30), metric: store.get('metric', 'min'), project: 'all', q: '',
     sel: null, adding: null, draft: null, focus: null, lastId: null, dismissed: null };
@@ -478,10 +469,10 @@ th.r, td.r { text-align: right }
 
   // ---- live ---------------------------------------------------------------------------------
   function renderLive() {
-    var on = active();
-    $('live-dot').classList.toggle('on', on);
-    $('card-agents').hidden = !on; $('card-bg').hidden = !on;
-    renderPlan(); renderRuns(); renderSent(); renderSession();
+    $('live-dot').classList.toggle('on', active());
+    renderPlan(); renderRuns(); renderSent();
+    // With nothing beside it, the plan takes the whole width.
+    $('side').hidden = $('card-agents').hidden && $('card-bg').hidden && $('card-sent').hidden;
   }
 
   function level(plan, step) { return plan.steps.filter(function (x) { return (x.parent || null) === (step.parent || null) }) }
@@ -530,7 +521,8 @@ th.r, td.r { text-align: right }
   function outline(plan) {
     var out = [], tops = plan.steps.filter(function (s) { return !s.parent }), i = 0;
     var kids = function (id) { return plan.steps.filter(function (s) { return s.parent === id }) };
-    var one = function (s, sub, mini) { out.push(s.id === state.sel ? editor(plan, s, sub, mini) : row(s, sub, mini)); out.push(refusalAt(plan, s.id)) };
+    // A step of a parallel block stays in its cell, marked; its editor opens under the whole block, at full width.
+    var one = function (s, sub, mini) { out.push(s.id === state.sel && !mini ? editor(plan, s, sub) : row(s, sub, mini, s.id === state.sel)); out.push(refusalAt(plan, s.id)) };
     out.push(refusalAt(plan, null));
     while (i < tops.length) {
       var t = tops[i];
@@ -538,7 +530,10 @@ th.r, td.r { text-align: right }
       var g = []; while (i < tops.length && tops[i].group === t.group) g.push(tops[i++]);
       out.push('<li class="group"><div class="group-head"><span class="eyebrow">Step ' + esc(t.group) + ' · in parallel</span><span class="meta">Order fixed</span></div><div class="cols">');
       g.forEach(function (s) { out.push('<ul class="col">'); one(s, false, true); kids(s.id).forEach(function (k) { one(k, true, true) }); out.push('</ul>') });
-      out.push('</div></li>');
+      out.push('</div>');
+      var open = g.concat.apply(g, g.map(function (s) { return kids(s.id) })).find(function (s) { return s.id === state.sel });
+      if (open) out.push('<ul class="group-ed">' + editor(plan, open) + '</ul>');
+      out.push('</li>');
     }
     return out.join('');
   }
@@ -556,21 +551,21 @@ th.r, td.r { text-align: right }
   }
   function ib(act, id, name, label) { return '<button type="button" class="ib sm" data-act="' + act + '" data-id="' + esc(id) + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' + icon(name, 15) + '</button>' }
   function tb(act, id, name, label, cls) { return '<button type="button" class="tb' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" data-id="' + esc(id) + '">' + icon(name, 14) + label + '</button>' }
-  function row(s, sub, mini) {
+  function row(s, sub, mini, sel) {
     var c = s.can, acts = '';
     if (c.edit) acts += ib('pick', s.id, 'edit', 'Edit step ' + s.id);
     if (c.add) acts += ib('add', s.id, 'plus', 'Add a micro-step after step ' + s.id);
     if (c.skip) acts += ib('skip', s.id, 'skip', 'Skip step ' + s.id);
     if (c.up || c.down) acts += '<button type="button" class="ib sm grip" data-grip="' + esc(s.id) + '" aria-label="Drag to reorder step ' + esc(s.id) + '" title="Drag to reorder">' + GRIP + '</button>';
-    return '<li class="it ' + s.status + (sub ? ' sub' : '') + (mini ? ' mini' : '') + '" data-row="' + esc(s.id) + '">' + glyph(s.status) +
+    return '<li class="it ' + s.status + (sub ? ' sub' : '') + (mini ? ' mini' : '') + (sel ? ' sel' : '') + '" data-row="' + esc(s.id) + '">' + glyph(s.status) +
       '<button type="button" class="pick" data-act="pick" data-id="' + esc(s.id) + '" aria-label="Step ' + esc(s.id) + ', ' + s.status + ': ' + esc(s.text) + '"><span class="id mono">' + esc(s.id) + '</span><span class="t">' + esc(s.text) + '</span></button>' +
       meta(s) + (acts ? '<span class="acts">' + acts + '</span>' : '') +
       (c.restore ? '<button type="button" class="tb sm" data-act="restore" data-id="' + esc(s.id) + '">' + icon('restore', 14) + 'Restore</button>' : '') +
       (s.status === 'done' ? '<span class="lock" role="img" aria-label="Locked">' + icon('lock', 13) + '</span>' : '') + '</li>';
   }
-  function editor(plan, s, sub, mini) {
+  function editor(plan, s, sub) {
     var c = s.can, id = esc(s.id), draft = state.draft && state.draft.id === s.id ? state.draft.text : s.text;
-    var h = '<li class="editor' + (sub ? ' sub' : '') + (mini ? ' mini' : '') + '" data-row="' + id + '"><div class="ed-top">' + glyph(s.status) + '<span class="id mono">' + id + '</span>';
+    var h = '<li class="editor' + (sub ? ' sub' : '') + '" data-row="' + id + '"><div class="ed-top">' + glyph(s.status) + '<span class="id mono">' + id + '</span>';
     h += c.edit ? '<label class="sr" for="ed-text">Text of step ' + id + '</label><input id="ed-text" class="field" data-id="' + id + '" value="' + esc(draft) + '" autocomplete="off">' : '<span class="t">' + esc(s.text) + '</span>' + meta(s);
     h += '</div><div class="ed-acts">';
     if (c.edit) h += '<button type="button" class="tb primary" data-act="save" data-id="' + id + '">Save<span class="mono k">↵</span></button>';
@@ -722,25 +717,26 @@ th.r, td.r { text-align: right }
   }
 
   // ---- side cards ----
+  // Only what runs right now; a card with nothing running steps aside.
   function renderRuns() {
-    var agents = (live && live.agents) || [], tasks = (live && live.tasks) || [], now = Date.now();
-    var mark = function (s) { return glyph(s === 'running' ? 'running' : s === 'failed' ? 'failed' : 'done', 'sm') };
-    var took = function (x) { return x.status === 'running' ? since(x.startedAt) : ago((x.endedAt || now) - x.startedAt) };
+    var running = function (x) { return x.status === 'running' };
+    var agents = ((live && live.agents) || []).filter(running), tasks = ((live && live.tasks) || []).filter(running);
     var ordered = [];
     agents.filter(function (x) { return !x.parentId || !agents.some(function (y) { return y.id === x.parentId }) }).forEach(function (x) {
       ordered.push([x, 0]); agents.filter(function (c) { return c.parentId === x.id }).forEach(function (c) { ordered.push([c, 1]) });
     });
-    $('agents').innerHTML = ordered.slice(-14).map(function (pair) {
+    $('card-agents').hidden = !agents.length; $('card-bg').hidden = !tasks.length;
+    $('agents').innerHTML = ordered.map(function (pair) {
       var x = pair[0];
-      return '<li' + (pair[1] ? ' class="nested"' : '') + '>' + mark(x.status) + '<span class="what"><span class="name" title="' + esc(x.description) + '">' + esc(x.description) + '</span>' +
-        '<span class="sub">' + esc(x.type) + (x.background ? ' · background' : '') + ' · ' + fmtTok(x.tokens) + ' tok · ' + x.tools + ' tools' + (x.status === 'running' && x.lastTool ? ' · ' + esc(x.lastTool) : '') + '</span></span>' +
-        '<span class="mono dim">' + took(x) + '</span></li>';
-    }).join('') || '<li class="empty">No subagents in this session yet.</li>';
-    $('agents-sub').textContent = agents.length ? agents.filter(function (x) { return x.status === 'running' }).length + ' running · ' + agents.length + ' in all' : '';
-    $('bg').innerHTML = tasks.slice().reverse().slice(0, 12).map(function (x) {
-      return '<li>' + mark(x.status) + '<span class="what"><span class="name mono" title="' + esc(x.label) + '">' + esc(x.label) + '</span><span class="sub">' + esc(x.kind) + '</span></span><span class="mono dim">' + took(x) + '</span></li>';
-    }).join('') || '<li class="empty">Nothing has run in the background yet.</li>';
-    $('bg-sub').textContent = tasks.length ? tasks.filter(function (x) { return x.status === 'running' }).length + ' running' : '';
+      return '<li' + (pair[1] ? ' class="nested"' : '') + '>' + glyph('running', 'sm') + '<span class="what"><span class="name" title="' + esc(x.description) + '">' + esc(x.description) + '</span>' +
+        '<span class="sub">' + esc(x.type) + (x.background ? ' · background' : '') + ' · ' + fmtTok(x.tokens) + ' tok · ' + x.tools + ' tools' + (x.lastTool ? ' · ' + esc(x.lastTool) : '') + '</span></span>' +
+        '<span class="mono dim">' + since(x.startedAt) + '</span></li>';
+    }).join('');
+    $('agents-sub').textContent = agents.length + ' running';
+    $('bg').innerHTML = tasks.slice().reverse().map(function (x) {
+      return '<li>' + glyph('running', 'sm') + '<span class="what"><span class="name mono" title="' + esc(x.label) + '">' + esc(x.label) + '</span><span class="sub">' + esc(x.kind) + '</span></span><span class="mono dim">' + since(x.startedAt) + '</span></li>';
+    }).join('');
+    $('bg-sub').textContent = tasks.length + ' running';
   }
   function renderSent() {
     // shortcut: "Waiting" counts every unread edit, also those made from the checklist in Claude Code; the board only lists its own.
@@ -749,12 +745,6 @@ th.r, td.r { text-align: right }
     $('sent').innerHTML = sent.slice(0, 6).map(function (s, i) {
       return '<li><span class="mono dim when">' + clock(s.at) + '</span><span class="what">' + esc(s.text) + '</span>' + (i < waiting ? '<span class="wait">Waiting</span>' : '<span class="dim" style="font-size:12px">Read</span>') + '</li>';
     }).join('');
-  }
-  function renderSession() {
-    var s = live && live.session; $('card-session').hidden = !s; if (!s) return;
-    $('session-title').textContent = s.title || s.project;
-    $('session').innerHTML = '<div><dt>Agent time</dt><dd>' + ago(s.agentMs) + '</dd></div><div><dt>Tokens</dt><dd>' + fmtTok(s.tokens) + '</dd></div>' +
-      '<div><dt>Turns</dt><dd>' + s.turns + '</dd></div><div><dt>Cost</dt><dd>' + fmtCost(s.cost) + ' <span class="dim">(last ' + fmtCost(s.lastCost) + ')</span></dd></div>';
   }
 
   // ---- stats --------------------------------------------------------------------------------

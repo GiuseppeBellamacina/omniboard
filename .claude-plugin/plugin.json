@@ -1,7 +1,7 @@
 {
   "name": "omniboard",
   "displayName": "Omniboard",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "See where Claude is in its plan and change it while Claude works (add micro-steps, rename, skip, reorder), follow its subagents and background tasks, and keep session statistics (cost, tokens, agent time, activity), all in a local browser board, with the progress in one row above the prompt.",
   "author": {
     "name": "Giuseppe Bellamacina",
