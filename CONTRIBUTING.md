@@ -2,8 +2,8 @@
 
 ## Layout
 
-- `hooks/register.tsx`: the hooks module (events, the `plan` tool, the band, the pane, the board server's lifecycle).
-- `hooks/plan.ts`: every change to a plan, as pure functions; the pane, the board server and Claude's tool all go through it.
+- `hooks/register.tsx`: the hooks module (events, the `plan` tool, the band, the board server's lifecycle).
+- `hooks/plan.ts`: every change to a plan, as pure functions; the board server and Claude's tool both go through it.
 - `hooks/graph.ts`: the plan's layout and its SVG; `hooks/stats.ts`: the ledger and number formatting.
 - `board/index.html`: the browser board, one self-contained page (no libraries, no external requests).
 - `server/board-server.mjs`, `scripts/import.mjs`: Node scripts, standard library only.

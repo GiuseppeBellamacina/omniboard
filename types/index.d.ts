@@ -67,15 +67,9 @@ declare module 'claude-code' {
       agents: AgentRun[]
       tasks: BgTask[]
       session: SessionStats | null
-      /** Band drawn on several rows instead of one. */
-      expanded: boolean
-      /** Pane: the step whose "+ after" or "edit" field is open. */
-      editing: { id: string; mode: 'add' | 'edit' } | null
-      /** Moves while something runs, so elapsed times redraw. */
-      tick: number
       /** The board's address while its server runs. */
       board: string | null
-      /** The last edit the plan refused, shown in the pane and the board. */
+      /** The last edit the plan refused, shown in the board. */
       refused: string | null
       /** The prompt box holds a slash command: the band steps aside for the command list. */
       composing: boolean

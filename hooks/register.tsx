@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, BgTask, Plan, SessionStats, Step } from '../types'
-import { MARK, layout, svgSource, textChain } from './graph'
-import { allowed, applyEdit, describe, isComplete, mark, newPlan, noteFor, progress } from './plan'
+import type { AgentRun, BgTask, SessionStats } from '../types'
+import { layout } from './graph'
+import { allowed, applyEdit, describe, mark, newPlan, noteFor, progress } from './plan'
 import type { Edit } from './plan'
 import { elapsed, keyOf, money, projectName, rowOf, tokens, upsert, usageTokens } from './stats'
 
@@ -12,15 +12,11 @@ const notesA = atom({ plugin: 'omniboard', key: 'notes' } as const, [])
 const agentsA = atom({ plugin: 'omniboard', key: 'agents' } as const, [])
 const tasksA = atom({ plugin: 'omniboard', key: 'tasks' } as const, [])
 const sessionA = atom({ plugin: 'omniboard', key: 'session' } as const, null)
-const expandedA = atom({ plugin: 'omniboard', key: 'expanded' } as const, false)
-const editingA = atom({ plugin: 'omniboard', key: 'editing' } as const, null)
-const tickA = atom({ plugin: 'omniboard', key: 'tick' } as const, 0)
 const boardA = atom({ plugin: 'omniboard', key: 'board' } as const, null)
 const refusedA = atom({ plugin: 'omniboard', key: 'refused' } as const, null)
 const composingA = atom({ plugin: 'omniboard', key: 'composing' } as const, false)
 
 const TOOL = 'mcp__omniboard__plan'
-const PANE = 'omniboard-plan'
 
 // The guidance lives in the tool's description: it reaches the model even where another plugin keeps
 // system-prompt hooks from running. Fixed text, so the prompt cache keeps it.
@@ -48,7 +44,6 @@ Never mark a step done that you did not complete.`,
   isDeferred: false,
 }
 
-let ticker: { cancel: () => void } | undefined
 let liveTimer: { cancel: () => void } | undefined
 
 async function dataDir($: EngineInterface) {
@@ -78,7 +73,6 @@ async function applyUserEdit($: EngineInterface, edit: Edit) {
     await update($, notesA, n => [...n, out.note])
     await update($, refusedA, () => null)
   }
-  await update($, editingA, () => null)
   scheduleLive($)
 }
 
@@ -119,23 +113,13 @@ async function answerTool($: EngineInterface, input: Record<string, unknown>): P
 
 // ---- agents and background tasks ----------------------------------------------------------------
 
-async function track($: EngineInterface) {
-  const busy = (await read($, agentsA)).some(a => a.status === 'running') || (await read($, tasksA)).some(t => t.status === 'running')
-  if (busy && !ticker) ticker = $.clock.every(5000, () => void update($, tickA, n => n + 1))
-  if (!busy && ticker) {
-    ticker.cancel()
-    ticker = undefined
-  }
-  scheduleLive($)
-}
-
 async function endTask($: EngineInterface, id: string, failed: boolean) {
   const now = await $.clock.now()
   const close = <T extends { id: string; status: string }>(list: T[]) =>
     list.map(x => (x.id === id && x.status === 'running' ? { ...x, status: failed ? ('failed' as const) : ('done' as const), endedAt: now } : x))
   await update($, tasksA, close)
   await update($, agentsA, close)
-  await track($)
+  scheduleLive($)
 }
 
 // ---- statistics -----------------------------------------------------------------------------------
@@ -247,24 +231,11 @@ async function openBoard($: EngineInterface) {
   void serve($).catch(() => $.ui.toast('omniboard: the board server could not start (is Node.js installed?).'))
 }
 
-// ---- the pane ------------------------------------------------------------------------------------
-
-/** Up and down are moves before a sibling: the step two places down, or the end of the level. */
-function moveOf(plan: Plan, step: Step, dir: -1 | 1): Edit {
-  const level = plan.steps.filter(s => s.parent === step.parent)
-  const i = level.indexOf(step)
-  const before = dir === -1 ? level[i - 1] : level[i + 2]
-  return { op: 'move', id: step.id, before: before ? before.id : null }
-}
-
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.tool.register(TOOL_SPEC)
-    await $.command.register({ name: 'checklist', description: 'Open Claude\'s plan as a checklist you can edit' })
-    await $.command.register({ name: 'board', description: 'Open the omniboard in the browser: live plan, agents, statistics' })
+    await $.command.register({ name: 'board', description: 'Open the omniboard in the browser: live plan you can edit, agents, statistics' })
     await $.command.register({ name: 'board-import', description: 'Add past Claude Code sessions to the omniboard statistics' })
-    const expanded = await $.store.get('expanded')
-    await update($, expandedA, () => expanded === true)
     // A (re)load starts with no server: the one an earlier load ran died with it.
     await update($, boardA, () => null)
     return next(e)
@@ -307,7 +278,7 @@ export const register: Register = on => {
     if (background) {
       const task: BgTask = { ...background, label: background.label.replace(/\s+/g, ' ').slice(0, 120), status: 'running', startedAt: now }
       await update($, tasksA, list => [...list.filter(t => t.id !== task.id), task].slice(-30))
-      await track($)
+      scheduleLive($)
     }
 
     // The person's plan edits reach Claude here, on its next action, whatever tool it is. A denied call carries
@@ -336,7 +307,7 @@ export const register: Register = on => {
         tools: 0,
       }
       await update($, agentsA, list => [...list.filter(a => a.id !== run.id), run].slice(-40))
-      await track($)
+      scheduleLive($)
     }
     return out
   })
@@ -350,7 +321,7 @@ export const register: Register = on => {
       )
       // Subagents' tokens count towards the session; their cost is already in the session's cost.
       await update($, sessionA, s => (s ? { ...s, tokens: s.tokens + used } : s))
-      await track($)
+      scheduleLive($)
     } else {
       await recordTurn($, e.durationMs, used)
     }
@@ -389,25 +360,19 @@ export const register: Register = on => {
     const live = new Set((e.background_tasks ?? []).filter(t => t.status === 'running').map(t => t.id))
     const now = await $.clock.now()
     await update($, tasksA, list => list.map(t => (t.status === 'running' && !live.has(t.id) ? { ...t, status: 'done' as const, endedAt: now } : t)))
-    await track($)
+    scheduleLive($)
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
       await update($, planA, () => null)
-      await update($, editingA, () => null)
       await update($, refusedA, () => null)
       await update($, notesA, () => [])
       await update($, agentsA, () => [])
       await update($, tasksA, () => [])
     }
     return next(e)
-  })
-
-  on('command.run', { command: 'checklist' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Plan', focus: true })
-    return {}
   })
 
   on('command.run', { command: 'board' }, async $ => {
@@ -438,98 +403,29 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // One row while a plan has open steps: its progress, the session's totals and the button to the board.
+  // Claude Code draws its "From the plugin" label above any band, its own menus included: so nothing at other times.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, composingA))) return next(e)
     const plan = await read($, planA)
-    const agents = await read($, agentsA)
-    const tasks = await read($, tasksA)
+    if (!plan?.steps.some(s => s.status === 'pending' || s.status === 'running')) return next(e)
     const session = await read($, sessionA)
-    const expanded = await read($, expandedA)
-    await read($, tickA)
-    const now = await $.clock.now()
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const width = e.props.bodyColumns
-
-    const runningAgents = agents.filter(a => a.status === 'running')
-    const runningTasks = tasks.filter(t => t.status === 'running')
-    const unfinished = plan?.steps.some(s => s.status === 'pending' || s.status === 'running')
-    // Shown only while a plan has open steps (Claude Code also draws its "From the plugin" label above any band,
-    // its own menus included). Agents and background tasks show in it while that plan runs.
-    if (!unfinished) return next(e)
     const below = await next(e).catch(() => undefined)
-    const p = plan && progress(plan)
-    const toggle = async () => {
-      const value = !expanded
-      await update($, expandedA, () => value)
-      await $.store.set('expanded', value)
-    }
-    const openPlan = () => $.ui.open({ id: PANE, title: 'Plan', focus: true })
-    const stats = session ? `${money(session.cost)} · ${elapsed(session.agentMs)} · ${tokens(session.tokens)} tok` : 'no turn yet'
-
-    // One row: progress (count and squares; the steps live in the checklist and the board), what runs, the totals,
-    // then the buttons. Claude Code already names the plugin above it.
-    const filled = p ? Math.round((p.done / Math.max(1, p.total)) * 8) : 0
-    const summary = (
-      <Box flexDirection="row" alignItems="center" gap={1}>
-        {p && <Text>▣ {p.done}/{p.total}</Text>}
-        {p && <Text color="success">{'■'.repeat(filled)}</Text>}
-        {p && <Text dimColor>{'□'.repeat(8 - filled)}</Text>}
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const p = progress(plan)
+    const filled = Math.round((p.done / Math.max(1, p.total)) * 8)
+    const mine = (
+      <Box flexDirection="row" alignItems="center" gap={1} width={e.props.bodyColumns}>
+        <Text>▣ {p.done}/{p.total}</Text>
+        <Text color="success">{'■'.repeat(filled)}</Text>
+        <Text dimColor>{'□'.repeat(8 - filled)}</Text>
         <Box flexGrow={1}>
           <Text wrap="truncate-end">
             {'  │  '}
-            {runningAgents.length || runningTasks.length ? `● ${runningAgents.length} agent${runningAgents.length === 1 ? '' : 's'} · ⧗ ${runningTasks.length} bg   │   ` : ''}
-            {stats}
+            {session ? `${money(session.cost)} · ${elapsed(session.agentMs)} · ${tokens(session.tokens)} tok` : 'no turn yet'}
           </Text>
         </Box>
-        <Button key="board" plain label="Board" onPress={() => openBoard($)} />
-        {plan && <Button key="plan" plain label="Plan" onPress={openPlan} />}
-        <Button key="toggle" plain label={expanded ? '▴' : '▾'} onPress={toggle} />
-      </Box>
-    )
-
-    const details = expanded && (
-      <Box flexDirection="column">
-        {plan && (
-          <Text wrap="truncate-end">
-            <Text bold>Plan</Text> · {plan.title}
-          </Text>
-        )}
-        {agents.length > 0 && <Text bold>Agents</Text>}
-        {[...runningAgents, ...agents.filter(a => a.status !== 'running').slice(-2)].slice(0, 5).map(a => (
-          <Box key={`agent-${a.id}`} flexDirection="row" gap={1}>
-            <Text color={a.status === 'running' ? 'warning' : a.status === 'done' ? 'success' : 'error'}>{a.status === 'running' ? ' ●' : a.status === 'done' ? ' ✓' : ' ✗'}</Text>
-            <Text dimColor>{a.type.padEnd(9).slice(0, 9)}</Text>
-            <Box flexGrow={1}>
-              <Text wrap="truncate-end">{a.description}</Text>
-            </Box>
-            <Text dimColor>
-              {elapsed((a.endedAt ?? now) - a.startedAt)} · {tokens(a.tokens)} tok{a.status === 'running' && a.lastTool ? ` · ${a.lastTool}` : ''}
-            </Text>
-          </Box>
-        ))}
-        {runningTasks.length > 0 && <Text bold>Background</Text>}
-        {runningTasks.slice(0, 3).map(t => (
-          <Box key={`task-${t.id}`} flexDirection="row" gap={1}>
-            <Text color="warning"> ⧗</Text>
-            <Text dimColor>{t.kind.padEnd(9)}</Text>
-            <Box flexGrow={1}>
-              <Text wrap="truncate-end">{t.label}</Text>
-            </Box>
-            <Text dimColor>{elapsed(now - t.startedAt)}</Text>
-          </Box>
-        ))}
-        {session && (
-          <Text dimColor wrap="truncate-end">
-            Session · last turn {money(session.lastCost)} · {session.turns} turns
-          </Text>
-        )}
-      </Box>
-    )
-
-    const mine = (
-      <Box flexDirection="column" width={width}>
-        {summary}
-        {details}
+        <Button key="board" plain label="Omniboard" onPress={() => openBoard($)} />
       </Box>
     )
     return below ? (
@@ -539,82 +435,6 @@ export const register: Register = on => {
       </Box>
     ) : (
       mine
-    )
-  })
-
-  // ---- the plan pane ----------------------------------------------------------------------------------
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const plan = await read($, planA)
-    const editing = await read($, editingA)
-    const refused = await read($, refusedA)
-    const table = $.ui.resolve(e)
-    const { Box, Text, Button } = table
-    if (!plan) {
-      return (
-        <Box flexDirection="column" gap={1}>
-          <Text dimColor>No plan yet. When Claude starts a plan or a task of several steps, it shows up here as a checklist you can edit.</Text>
-        </Box>
-      )
-    }
-    const p = progress(plan)
-    const Input = 'Input' in table ? table.Input : undefined
-    const graph =
-      'Svg' in table ? (
-        <table.Svg source={svgSource(plan)} alt={`Plan graph: ${p.done} of ${p.total} steps done`} isInteractive />
-      ) : (
-        <Text>{textChain(plan)}</Text>
-      )
-    const edit = (x: Edit) => applyUserEdit($, x)
-    const openField = (id: string, mode: 'add' | 'edit') => update($, editingA, () => ({ id, mode }))
-
-    return (
-      <Box flexDirection="column" gap={1}>
-        <Text bold wrap="truncate-end">
-          {plan.title} · {p.done}/{p.total}
-        </Text>
-        {graph}
-        {refused && <Text color="error">{refused}</Text>}
-        <Box flexDirection="column">
-          {plan.steps.map(s => {
-            const can = allowed(plan, s)
-            return (
-              <Box key={`step-${s.id}`} flexDirection="column">
-                <Box flexDirection="row" gap={1}>
-                  <Text color={s.status === 'done' ? 'success' : s.status === 'running' ? 'warning' : undefined} dimColor={s.status === 'skipped'}>
-                    {s.parent ? '   ' : ''}
-                    {MARK[s.status]} {s.id}
-                  </Text>
-                  <Box flexGrow={1}>
-                    <Text wrap="truncate-end" dimColor={s.status === 'done' || s.status === 'skipped'}>
-                      {s.text}
-                      {s.group ? ' · parallel' : ''}
-                      {s.byUser ? ' · added by you' : s.editedByUser ? ' · edited by you' : ''}
-                    </Text>
-                  </Box>
-                  {can.up && <Button key={`up-${s.id}`} plain label="↑" onPress={() => edit(moveOf(plan, s, -1))} />}
-                  {can.down && <Button key={`down-${s.id}`} plain label="↓" onPress={() => edit(moveOf(plan, s, 1))} />}
-                  {can.add && Input && <Button key={`add-${s.id}`} plain label="+ after" onPress={() => openField(s.id, 'add')} />}
-                  {can.edit && Input && <Button key={`edit-${s.id}`} plain label="edit" onPress={() => openField(s.id, 'edit')} />}
-                  {can.skip && <Button key={`skip-${s.id}`} plain label="skip" onPress={() => edit({ op: 'skip', id: s.id })} />}
-                  {can.restore && <Button key={`restore-${s.id}`} plain label="restore" onPress={() => edit({ op: 'restore', id: s.id })} />}
-                  {can.remove && s.byUser && <Button key={`remove-${s.id}`} plain label="✕" onPress={() => edit({ op: 'remove', id: s.id })} />}
-                </Box>
-                {Input && editing?.id === s.id && (
-                  <Input
-                    key={`field-${s.id}-${editing.mode}`}
-                    label={editing.mode === 'add' ? `New step after ${s.id}:` : `Step ${s.id}:`}
-                    value={editing.mode === 'edit' ? s.text : ''}
-                    submitLabel={editing.mode === 'add' ? 'add' : 'save'}
-                    autoFocus
-                    onSubmit={value => edit(editing.mode === 'add' ? { op: 'add', after: s.id, text: value } : { op: 'edit', id: s.id, text: value })}
-                  />
-                )}
-              </Box>
-            )
-          })}
-        </Box>
-        <Text dimColor>{isComplete(plan) ? 'This plan is complete: it stays as it ended.' : 'Done sections are locked. Claude reads every change at its next step.'}</Text>
-      </Box>
     )
   })
 }

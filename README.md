@@ -1,6 +1,6 @@
 # omniboard — see where Claude is in its plan, and steer it
 
-> A live checklist of the plan Claude is carrying out, which you can edit while it works (add micro-steps, rename, skip, reorder); its subagents and background tasks at a glance; and your session statistics in a local board.
+> The plan Claude is carrying out, live in a local board where you can edit it while Claude works (add micro-steps, rename, skip, reorder); its subagents and background tasks at a glance; your session statistics; and one row above the prompt with the progress.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757.svg)](https://code.claude.com/docs/en/plugins)
@@ -27,22 +27,13 @@ Requires a Claude Code build with plugin function hooks (mods) and [Node.js](htt
 
 ### A band above the prompt
 
-One row, while a plan has open steps (one you approved, or steps Claude set for a longer task): the plan's progress and current step, the subagents and background tasks running meanwhile, and the session's cost, agent time and tokens. **▾** expands it (the choice is remembered), **Board** opens the browser board, **Plan** the checklist. With no plan running it does not show, and it steps aside while you type a slash command.
+One row, while a plan has open steps (one you approved, or steps Claude set for a longer task): the plan's progress, the session's cost, agent time and tokens, and **Omniboard**, which opens the browser board. With no plan running it does not show, and it steps aside while you type a slash command.
 
 ```text
-▣ 3/7 ■■■□□□□□  │  ● 2 agents · ⧗ 1 bg  │  $4.21 · 12m04s · 1.2M tok     Board  Plan  ▾
+▣ 3/7 ■■■□□□□□  │  $4.21 · 12m04s · 1.2M tok                     Omniboard
 ```
 
-The band keeps to the count and the progress bar; the steps themselves are in the checklist and the board.
-
-Expanded, it adds the plan's title, the running and latest subagents (type, task, time, tokens, the tool they are using) and the background tasks.
-
-### `/checklist`: the plan you can edit
-
-A pane inside Claude Code: the plan as a graph read top to bottom (drawn as SVG in VS Code and the desktop app, as text in the terminal) and as a list where each step offers what you may do to it now. Steps that run in parallel sit side by side on one row, forking from the step above and joining into the step below, and are marked *parallel*.
-
-- **+ after**: add a micro-step to that step; several micro-steps of one step each get their own row;
-- **edit**: rename a step; **skip** / **restore**; **↑ ↓**: reorder pending steps; **✕**: remove a step you added.
+The steps, the subagents and the background tasks are in the board.
 
 ### `/board`: the browser board
 
@@ -55,16 +46,16 @@ A local page with two tabs, in a light and a dark theme (it follows your system;
 
 Adds your past sessions to the statistics, from Claude Code's own transcripts (`~/.claude/projects`), plus the rows of ponytail's band ledger if you used it. Run it once; running it again only adds what is new.
 
-## How Claude keeps the checklist current
+## How Claude keeps the plan current
 
 - omniboard gives Claude a tool, `mcp__omniboard__plan`, whose description tells it when to use it: when it carries out an approved plan or any task of three steps or more, it sets the plan, then marks each step started and done. Steps it will run at the same time (subagents started together, say) go in as parallel steps, `2a`, `2b`, ... The tool never asks you for permission.
-- When you approve a plan in plan mode, Claude is reminded to load it into the checklist before starting.
-- **Claude can change the plan as the work demands**: insert a new step, add a micro-step, rename, skip, restore, remove or reorder steps; the checklist and the board follow at once. The same locks apply to it as to you, and the steps you added or changed are yours: Claude has to ask you before renaming, skipping or removing them.
+- When you approve a plan in plan mode, Claude is reminded to load it into omniboard before starting.
+- **Claude can change the plan as the work demands**: insert a new step, add a micro-step, rename, skip, restore, remove or reorder steps; the band and the board follow at once. The same locks apply to it as to you, and the steps you added or changed are yours: Claude has to ask you before renaming, skipping or removing them.
 - **Your edits reach Claude for certain**: a short note ("The user changed your plan: added step 4.1 …") plus the updated plan is attached to the result of Claude's very next action, whatever tool it uses, or to your next prompt if it is idle. Claude reads it exactly once.
 - **Claude cannot close the plan past your additions**: marking the last step done is refused while a step you added or changed is still open.
-- **Finished work is locked**: once a step is done, its section can no longer be edited and gets no new micro-steps; nothing can be moved across work that has started. The pane and the board only offer what is allowed, and every edit is checked again when it is applied.
+- **Finished work is locked**: once a step is done, its section can no longer be edited and gets no new micro-steps; nothing can be moved across work that has started. The board only offers what is allowed, and every edit is checked again when it is applied.
 
-If Claude uses its own todo tool instead, the checklist mirrors it.
+If Claude uses its own todo tool instead, omniboard mirrors it.
 
 ## Statistics: what the numbers mean
 
@@ -88,7 +79,6 @@ The two measures of agent time are close but not identical. A transcript without
 - **Workflow subagents** are counted in the session's tokens but not listed one by one.
 - **Parallel steps** move together: you can edit, skip or add micro-steps to each branch, but not reorder a branch on its own.
 - **The browser board closes with the Claude Code session** that opened it; `/board` opens it again.
-- **The terminal** has no SVG, so the checklist's graph there is a line of text; the list and its actions are the same.
 
 ## License
 

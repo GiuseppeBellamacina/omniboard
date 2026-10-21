@@ -1,8 +1,8 @@
 {
   "name": "omniboard",
   "displayName": "Omniboard",
-  "version": "0.5.0",
-  "description": "See where Claude is in its plan, as a live checklist you can edit (add micro-steps, skip, reorder) from Claude Code or the browser; follow its subagents and background tasks; and keep session statistics (cost, tokens, agent time, activity) in a local board.",
+  "version": "0.6.0",
+  "description": "See where Claude is in its plan and change it while Claude works (add micro-steps, rename, skip, reorder), follow its subagents and background tasks, and keep session statistics (cost, tokens, agent time, activity), all in a local browser board, with the progress in one row above the prompt.",
   "author": {
     "name": "Giuseppe Bellamacina",
     "url": "https://github.com/GiuseppeBellamacina"
