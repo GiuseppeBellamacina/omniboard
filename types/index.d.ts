@@ -10,6 +10,8 @@ export type Step = {
   byUser?: boolean
   /** Renamed by the person after Claude wrote it. */
   editedByUser?: boolean
+  /** Top-level steps that share a group run in parallel: "2a" and "2b" both have group "2". */
+  group?: string
   startedAt?: number
   endedAt?: number
 }

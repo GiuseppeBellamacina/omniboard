@@ -24,6 +24,24 @@ test('micro-steps of one step each get their own row, none overlapping', async (
   }
 })
 
+test('parallel steps share a row, fork from the step above and join into the step below', async () => {
+  let plan = newPlan('P', ['read', ['api', 'ui', 'docs'], 'test'], 0)
+  expect(plan.steps.map(s => `${s.id}:${s.group ?? '-'}`)).toEqual(['1:-', '2a:2', '2b:2', '2c:2', '3:-'])
+  plan = ok(add(plan, '2b', 'mock the server', true))
+  const { boxes, edges } = layout(plan)
+  const at = (id: string) => boxes.find(b => b.step.id === id)!
+  expect(new Set(['2a', '2b', '2c'].map(id => at(id).y)).size).toBe(1)
+  expect(at('2a').y).toBeGreaterThan(at('1').y)
+  expect(at('3').y).toBeGreaterThan(at('2b.1').y)
+  // 1 → 2a/2b/2c and 2a/2b/2c → 3, plus the micro-step's elbow.
+  expect(edges.length).toBe(3 + 3 + 1)
+  for (const a of boxes) for (const b of boxes) {
+    if (a === b) continue
+    expect(a.x + NODE.w <= b.x || b.x + NODE.w <= a.x || a.y + NODE.h <= b.y || b.y + NODE.h <= a.y).toBe(true)
+  }
+  expect('error' in applyEdit(plan, { op: 'move', id: '2a', before: '2b' })).toBe(true)
+})
+
 test('a done section is locked: no edits, no micro-steps, no moves across it', async () => {
   let plan = newPlan('P', ['a', 'b', 'c', 'd'], 0)
   plan = ok(mark(plan, '1', 'done', 1))

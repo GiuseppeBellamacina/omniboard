@@ -15,13 +15,24 @@ export type Outcome = { plan: Plan; note: string } | { error: string }
 const clean = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 200)
 const quote = (text: string) => `"${text}"`
 
-export function newPlan(title: string, texts: readonly string[], now: number): Plan {
-  return {
-    title: clean(title) || 'Plan',
-    startedAt: now,
-    steps: texts.map(clean).filter(Boolean).map((text, i) => ({ id: String(i + 1), text, status: 'pending' as const })),
+/** A step is a string; a list of strings is a set of steps that run in parallel ("2a", "2b", ... in group "2"). */
+export type StepInput = string | readonly string[]
+
+export function newPlan(title: string, items: readonly StepInput[], now: number): Plan {
+  const steps: Step[] = []
+  let n = 0
+  for (const item of items) {
+    const texts = (typeof item === 'string' ? [item] : item).map(t => clean(String(t))).filter(Boolean)
+    if (texts.length === 0) continue
+    n += 1
+    if (texts.length === 1) steps.push({ id: String(n), text: texts[0]!, status: 'pending' })
+    else texts.forEach((text, i) => steps.push({ id: `${n}${String.fromCharCode(97 + (i % 26))}`, text, status: 'pending', group: String(n) }))
   }
+  return { title: clean(title) || 'Plan', startedAt: now, steps }
 }
+
+/** The other branches running in parallel with a step. */
+export const parallelTo = (plan: Plan, step: Step) => (step.group ? plan.steps.filter(s => s.group === step.group && s !== step) : [])
 
 export const find = (plan: Plan, id: string) => plan.steps.find(s => s.id === id)
 /** The top-level step a step belongs to: itself, or its parent. */
@@ -42,7 +53,8 @@ export function allowed(plan: Plan, step: Step) {
   const pending = open && step.status === 'pending'
   const level = siblings(plan, step)
   const i = level.indexOf(step)
-  const movable = (j: number) => pending && level[j]?.status === 'pending' && !hasChildrenStarted(plan, level[j]!)
+  // shortcut: parallel branches do not move (a move would split their group); reorder by editing the group's steps instead.
+  const movable = (j: number) => pending && !step.group && !level[j]?.group && level[j]?.status === 'pending' && !hasChildrenStarted(plan, level[j]!)
   return {
     add: open && step.status !== 'skipped',
     edit: open,
@@ -116,6 +128,7 @@ export function applyEdit(plan: Plan, edit: Edit): Outcome {
       if (edit.before !== null && !target) return { error: `Step ${edit.before} no longer exists.` }
       if (target === step) return { error: 'Nothing changed.' }
       if (target && target.parent !== step.parent) return { error: 'A step can move only among the steps of its own level.' }
+      if (step.group || target?.group) return { error: 'Parallel steps stay together: they cannot be moved one by one.' }
       // Never across work that has started: every step between the old and the new place must still be pending.
       const level = siblings(plan, step)
       const from = level.indexOf(step)
@@ -172,7 +185,8 @@ const GLYPH: Record<Step['status'], string> = { pending: '[ ]', running: '[>]', 
 export function describe(plan: Plan): string {
   const { done, total } = progress(plan)
   const lines = plan.steps.map(s => {
-    const tags = [s.byUser ? 'added by the user' : '', s.editedByUser ? 'changed by the user' : ''].filter(Boolean)
+    const others = parallelTo(plan, s).map(o => o.id)
+    const tags = [others.length ? `parallel with ${others.join(', ')}` : '', s.byUser ? 'added by the user' : '', s.editedByUser ? 'changed by the user' : ''].filter(Boolean)
     return `${s.parent ? '    ' : ''}${GLYPH[s.status]} ${s.id} ${s.text}${tags.length ? ` (${tags.join(', ')})` : ''}`
   })
   return [`Plan: ${plan.title} (${done}/${total} done)`, ...lines].join('\n')
