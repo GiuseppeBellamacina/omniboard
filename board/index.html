@@ -402,7 +402,8 @@ th.r, td.r { text-align: right }
     if (st.can.restore) act('Restore', '', function () { postEdit({ op: 'restore', id: st.id }, 'Restored ' + st.id + '.') });
     if (st.can.remove && st.byUser) act('Remove', 'danger', function () { postEdit({ op: 'remove', id: st.id }, 'Removed ' + st.id + '.') });
     if (btns.children.length) box.appendChild(btns);
-    if (top && top.status === 'done') box.appendChild(el('p', { class: 'hint' }, 'Step ' + esc(top.id) + ' is done: its section is locked.'));
+    if (!active()) box.appendChild(el('p', { class: 'hint' }, 'This plan is complete: it stays as it ended.'));
+    else if (top && top.status === 'done') box.appendChild(el('p', { class: 'hint' }, 'Step ' + esc(top.id) + ' is done: its section is locked.'));
     else box.appendChild(el('p', { class: 'hint' }, 'Drag a pending step to reorder it. Claude reads every change at its next step.'));
     if (sent.length) {
       box.appendChild(el('div', { class: 'label' }, 'Sent to Claude'));

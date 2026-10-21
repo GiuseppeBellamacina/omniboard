@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, BgTask, Plan, SessionStats, Step } from '../types'
 import { MARK, layout, svgSource, textChain } from './graph'
-import { allowed, applyEdit, describe, mark, newPlan, noteFor, progress } from './plan'
+import { allowed, applyEdit, describe, isComplete, mark, newPlan, noteFor, progress } from './plan'
 import type { Edit } from './plan'
 import { elapsed, keyOf, money, projectName, rowOf, tokens, upsert, usageTokens } from './stats'
 
@@ -607,7 +607,7 @@ export const register: Register = on => {
             )
           })}
         </Box>
-        <Text dimColor>Done sections are locked. Claude reads every change at its next step.</Text>
+        <Text dimColor>{isComplete(plan) ? 'This plan is complete: it stays as it ended.' : 'Done sections are locked. Claude reads every change at its next step.'}</Text>
       </Box>
     )
   })

@@ -49,9 +49,12 @@ export function progress(plan: Plan) {
   return { done: counted.filter(s => s.status === 'done').length, total: counted.length }
 }
 
+/** No step left to do: the plan is over and stays as it ended. */
+export const isComplete = (plan: Plan) => !plan.steps.some(s => s.status === 'pending' || s.status === 'running')
+
 /** What the person may do to a step right now; the pane and the board show only these. */
 export function allowed(plan: Plan, step: Step) {
-  const open = !isLocked(plan, step)
+  const open = !isComplete(plan) && !isLocked(plan, step)
   const pending = open && step.status === 'pending'
   const level = siblings(plan, step)
   const i = level.indexOf(step)
@@ -92,6 +95,7 @@ export type By = 'user' | 'claude'
 
 /** A change to the plan. The same locks hold for both; Claude may not rename, skip or remove a step the person added or changed. */
 export function applyEdit(plan: Plan, edit: Edit, by: By = 'user'): Outcome {
+  if (isComplete(plan) && by === 'user') return { error: 'The plan is complete: it can no longer change.' }
   if (edit.op === 'add') return add(plan, edit.after, edit.text, by === 'user')
   if (edit.op === 'insert') return insert(plan, edit.after, edit.text, by === 'user')
   const step = find(plan, edit.id)

@@ -88,6 +88,14 @@ test('Claude can insert, rename, skip and move its own steps, but not the ones t
   expect(find(plan, '5')!.status).toBe('skipped')
 })
 
+test('a complete plan is read-only for the person', async () => {
+  let plan = newPlan('P', ['a', 'b'], 0)
+  plan = ok(applyEdit(plan, { op: 'skip', id: '2' }))
+  plan = ok(mark(plan, '1', 'done', 1))
+  expect(allowed(plan, find(plan, '2')!)).toEqual({ add: false, edit: false, skip: false, restore: false, remove: false, up: false, down: false })
+  expect(applyEdit(plan, { op: 'restore', id: '2' })).toEqual({ error: 'The plan is complete: it can no longer change.' })
+})
+
 test('skip and restore take the micro-steps along; remove drops them', async () => {
   let plan = newPlan('P', ['a', 'b'], 0)
   plan = ok(add(plan, '2', 'm', true))
