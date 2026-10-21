@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omniboard</title>
+<style>
+/* Layout: top bar with tabs, project rail on the left, one working column; instrument-panel calm, colour only for state. */
+:root {
+  --bg: #0e1116; --surface: #141920; --surface-2: #1a2029; --line: #252d38; --line-soft: #1e252f;
+  --fg: #e3e8ef; --muted: #8a96a5; --faint: #5d6876;
+  --accent: #7fb2ff; --accent-ink: #0b1626;
+  --run: #f0b35b; --done: #62c7a1; --warn: #f07b6c;
+  --p1: #7fb2ff; --p2: #c49cf4; --p3: #ef9f78; --p4: #67c4c6; --p5: #e6c86e; --p6: #9aa7b8;
+  --heat-0: #1a2029; --heat-1: #22344d; --heat-2: #2f5585; --heat-3: #4f84c9; --heat-4: #9cc6ff;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root {
+  --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f5; --line: #dbe1e8; --line-soft: #e8ecf1;
+  --fg: #18202a; --muted: #5b6776; --faint: #8a95a3;
+  --accent: #2f6fd6; --accent-ink: #ffffff;
+  --run: #b9760f; --done: #23946c; --warn: #c8473a;
+  --p1: #2f6fd6; --p2: #8a52c9; --p3: #c9663a; --p4: #1f8f92; --p5: #a3861c; --p6: #66748a;
+  --heat-0: #e8ecf1; --heat-1: #c9daf2; --heat-2: #8fb4ea; --heat-3: #4e86db; --heat-4: #1f56b0;
+  color-scheme: light } }
+* { box-sizing: border-box }
+html, body { margin: 0 }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font-ui) }
+button, input { font: inherit; color: inherit }
+button { cursor: pointer }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+[hidden] { display: none !important }
+.mono { font-family: var(--font-mono); font-size: 0.86em }
+.num { font-variant-numeric: tabular-nums }
+
+.top { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 16px }
+.top-in { max-width: 1240px; margin-inline: auto; display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap }
+.brand { font-weight: 650; display: flex; align-items: center; gap: 8px }
+.brand svg { display: block }
+.tabs, .seg { display: flex; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 2px }
+.tabs button, .seg button { background: none; border: 0; padding: 5px 12px; border-radius: 6px; color: var(--muted) }
+.tabs button[aria-selected="true"], .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--fg) }
+.dot-live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-left: 6px; vertical-align: 1px }
+.dot-live.on { background: var(--done) }
+.conn { margin-left: auto; font-size: 12px; color: var(--muted) }
+.conn.off { color: var(--warn) }
+
+.layout { max-width: 1240px; margin-inline: auto; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 16px 48px }
+.rail h3 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); margin: 4px 0 8px; font-weight: 600 }
+.rail ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px }
+.rail button { width: 100%; display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 6px 8px; border-radius: 6px; color: var(--muted); text-align: left }
+.rail button[aria-pressed="true"] { background: var(--surface); color: var(--fg) }
+.rail .count { margin-left: auto; font-size: 12px; color: var(--faint) }
+.sw { width: 8px; height: 8px; border-radius: 2px; flex: none; display: inline-block }
+main { min-width: 0; display: flex; flex-direction: column; gap: 20px }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0 }
+.panel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px }
+.panel-head h2 { font-size: 15px; margin: 0; font-weight: 600; text-wrap: balance }
+.panel-head .sub { color: var(--muted); font-size: 13px }
+.right { margin-left: auto }
+.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); font-weight: 600 }
+.empty { color: var(--muted); margin: 0 }
+.facts-row { display: flex; gap: 8px 22px; flex-wrap: wrap; color: var(--muted); font-size: 13px }
+.facts-row b { color: var(--fg); font-weight: 600 }
+
+.progress { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px }
+.bar { width: 120px; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--done); transition: width .3s }
+.plan-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 16px }
+.graph-scroll { overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg); max-height: 70vh }
+.graph-scroll svg { display: block; touch-action: none }
+.node { cursor: pointer }
+.node.drag { cursor: grab }
+.node rect.box { fill: var(--surface); stroke: var(--line) }
+.node.sel rect.box { stroke: var(--accent); stroke-width: 1.5 }
+.node.drop rect.box { stroke: var(--accent); stroke-dasharray: 4 3 }
+.node:hover rect.box { stroke: var(--muted) }
+.node .t { fill: var(--fg); font: 13px var(--font-ui) }
+.node .s { fill: var(--muted); font: 11px var(--font-ui) }
+.node.done .t, .node.skipped .t { fill: var(--muted) }
+.node.skipped .t { text-decoration: line-through }
+.node.dragging { opacity: 0.55 }
+.edge { stroke: var(--line); stroke-width: 1.5; fill: none }
+.edge.on { stroke: color-mix(in srgb, var(--done) 60%, var(--line)) }
+.plus circle { fill: var(--surface-2); stroke: var(--line); cursor: pointer }
+.plus:hover circle, .plus:focus-visible circle { stroke: var(--accent) }
+.plus text { fill: var(--muted); font: 600 13px var(--font-ui); pointer-events: none }
+.inspector { border: 1px solid var(--line-soft); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); align-self: start }
+.inspector input { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px }
+.inspector input:disabled { color: var(--muted) }
+.btns { display: flex; flex-wrap: wrap; gap: 6px }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 13px }
+.btn:hover { border-color: var(--muted) }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) }
+.btn.danger { color: var(--warn) }
+.refused { color: var(--warn); font-size: 13px }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--muted) }
+.log li::before { content: "→ "; color: var(--accent) }
+.hint { font-size: 12.5px; color: var(--faint); margin: 0 }
+
+.two { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px }
+.rows { display: flex; flex-direction: column }
+.row { display: grid; grid-template-columns: 16px 86px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 2px; border-top: 1px solid var(--line-soft) }
+.row:first-child { border-top: 0 }
+.row .what { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.row .meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; text-align: right }
+.indent { padding-left: 22px; position: relative }
+.indent::before { content: ""; position: absolute; left: 7px; top: 0; bottom: 50%; width: 10px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); border-bottom-left-radius: 4px }
+.chip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); justify-self: start; white-space: nowrap; max-width: 86px; overflow: hidden; text-overflow: ellipsis }
+.st { width: 9px; height: 9px; border-radius: 50%; display: block; background: var(--faint) }
+.st.running { background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 22%, transparent) }
+.st.done { background: var(--done) }
+.st.failed { background: var(--warn) }
+@media (prefers-reduced-motion: no-preference) { .st.running { animation: pulse 1.6s ease-in-out infinite } }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--run) 8%, transparent) } }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden; min-width: 0 }
+.kpi .v { font-size: 26px; font-weight: 600; letter-spacing: -0.01em }
+.kpi .d { font-size: 12px; color: var(--muted) }
+.kpi .d.up { color: var(--done) }
+.kpi svg { display: block; margin-top: 8px; margin-inline: -14px; width: calc(100% + 28px) }
+.chart-box { position: relative; overflow-x: auto }
+.chart-box svg { display: block }
+.axis { fill: var(--faint); font: 11px var(--font-ui) }
+.grid { stroke: var(--line-soft) }
+.tip { position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; min-width: 160px }
+.tip .r { display: flex; gap: 8px; align-items: center }
+.tip .r b { margin-left: auto; font-weight: 600 }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-top: 8px; align-items: center }
+.bottom { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px }
+.search { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; width: 220px; max-width: 100% }
+.table-scroll { overflow-x: auto }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums }
+th { text-align: left; font-weight: 500; color: var(--faint); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line) }
+td { padding: 8px; border-bottom: 1px solid var(--line-soft); white-space: nowrap }
+td.name { white-space: normal; min-width: 200px }
+td.name small { display: block; color: var(--faint); font-size: 11.5px }
+td .tbar { height: 2px; background: var(--accent); border-radius: 1px; margin-top: 5px; opacity: 0.8 }
+th.r, td.r { text-align: right }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; margin-top: 14px }
+.facts .v { font-size: 22px; font-weight: 600 }
+.facts dl { grid-column: 1 / -1; margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; border-top: 1px solid var(--line-soft); padding-top: 12px; font-size: 13px }
+.facts dt { color: var(--muted) }
+.facts dd { margin: 0; text-align: right }
+.stack { display: flex; flex-direction: column; gap: 20px }
+
+@media (max-width: 980px) {
+  .plan-wrap, .two, .bottom { grid-template-columns: minmax(0, 1fr) }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+}
+@media (max-width: 760px) {
+  .layout { grid-template-columns: minmax(0, 1fr) }
+  .rail ul { flex-direction: row; flex-wrap: wrap }
+  .rail button { width: auto }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="9" r="2" fill="currentColor"/><path d="M9.5 9h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      omniboard
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-view="live">Live<span class="dot-live" id="live-dot" aria-hidden="true"></span></button>
+      <button role="tab" aria-selected="false" data-view="stats">Stats</button>
+    </div>
+    <div class="seg" id="range" hidden>
+      <button data-r="7" aria-pressed="false">7d</button><button data-r="30" aria-pressed="true">30d</button><button data-r="90" aria-pressed="false">90d</button><button data-r="0" aria-pressed="false">All</button>
+    </div>
+    <span class="conn" id="conn">connecting…</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="rail" id="rail" hidden>
+    <h3>Projects</h3>
+    <ul id="projects"></ul>
+  </aside>
+  <main>
+    <section id="view-live" class="stack">
+      <div class="facts-row num" id="session"></div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 id="plan-title">Plan</h2>
+          <div class="progress right" id="plan-progress" hidden><span id="plan-count" class="num"></span><div class="bar"><i id="plan-bar"></i></div></div>
+        </div>
+        <p class="empty" id="plan-empty">No plan running. When Claude starts a plan or a task of several steps, it shows up here and you can edit it while Claude works.</p>
+        <div class="plan-wrap" id="plan-body" hidden>
+          <div class="graph-scroll" id="graph"></div>
+          <div class="inspector" id="inspector"></div>
+        </div>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <div class="panel-head"><h2>Agents</h2><span class="sub" id="agents-sub"></span></div>
+          <div class="rows" id="agents"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Background</h2><span class="sub" id="bg-sub"></span></div>
+          <div class="rows" id="bg"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-stats" class="stack" hidden>
+      <div class="kpis" id="kpis"></div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 id="chart-title">Agent time</h2><span class="sub" id="chart-sub"></span>
+          <div class="seg right" id="metric">
+            <button data-m="min" aria-pressed="true">Agent time</button><button data-m="cost" aria-pressed="false">Cost</button><button data-m="tok" aria-pressed="false">Tokens</button>
+          </div>
+        </div>
+        <div class="chart-box" id="chart"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="bottom">
+        <div class="panel">
+          <div class="panel-head"><h2>Sessions</h2><span class="sub num" id="sess-sub"></span><input class="search right" id="q" type="search" placeholder="Search sessions" aria-label="Search sessions"></div>
+          <div class="table-scroll"><table><thead><tr><th>Session</th><th class="r">Agent time</th><th class="r">Cost</th><th class="r">Tokens</th><th class="r">Turns</th><th>Model</th></tr></thead><tbody id="rows"></tbody></table></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Activity</h2><span class="sub">agent time per day, last 12 weeks</span></div>
+          <div id="heat"></div>
+          <div class="facts" id="facts"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var DAY = 864e5;
+  var $ = function (id) { return document.getElementById(id) };
+  var css = function (v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] }) };
+  var el = function (tag, attrs, html) { var n = document.createElement(tag); for (var k in attrs || {}) n.setAttribute(k, attrs[k]); if (html != null) n.innerHTML = html; return n };
+  var NS = 'http://www.w3.org/2000/svg';
+  var sv = function (tag, attrs) { var n = document.createElementNS(NS, tag); for (var k in attrs || {}) n.setAttribute(k, attrs[k]); return n };
+  var store = { get: function (k, d) { try { var v = localStorage.getItem('omniboard.' + k); return v == null ? d : JSON.parse(v) } catch (e) { return d } }, set: function (k, v) { try { localStorage.setItem('omniboard.' + k, JSON.stringify(v)) } catch (e) {} } };
+
+  var fmtMin = function (m) { m = Math.round(m); var h = Math.floor(m / 60); return h ? h + 'h ' + String(m % 60).padStart(2, '0') + 'm' : m + 'm' };
+  var fmtCost = function (c) { return '$' + c.toFixed(2) };
+  var fmtTok = function (t) { return t >= 1e9 ? (t / 1e9).toFixed(1) + 'B' : t >= 1e6 ? (t / 1e6).toFixed(1) + 'M' : t >= 1e3 ? Math.round(t / 1e3) + 'k' : String(Math.round(t)) };
+  var fmtDay = function (dt) { return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) };
+  var ago = function (ms) { var s = Math.max(0, Math.round(ms / 1000)); if (s < 60) return s + 's'; var m = Math.floor(s / 60); if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's'; return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm' };
+  var FMT = { min: fmtMin, cost: fmtCost, tok: fmtTok };
+  var NAMES = { min: 'Agent time', cost: 'Cost', tok: 'Tokens' };
+  var COLORS = ['--p1', '--p2', '--p3', '--p4', '--p5', '--p6'];
+
+  var state = { view: store.get('view', 'live'), range: store.get('range', 30), metric: store.get('metric', 'min'), project: 'all', q: '', sel: null, adding: null };
+  var live = null, sessions = [], projects = [], sent = [];
+
+  // ---- server -------------------------------------------------------------------------------
+  function conn(ok, text) { $('conn').textContent = text; $('conn').classList.toggle('off', !ok) }
+  function fetchLive() {
+    return fetch('api/live', { cache: 'no-store' }).then(function (r) { return r.json() }).then(function (data) {
+      live = data; conn(true, live.at ? 'updated ' + new Date(live.at).toLocaleTimeString() : 'connected'); renderLive();
+    }).catch(function () { conn(false, 'Claude Code is not reachable: the board closes with its session') });
+  }
+  (function poll() { var go = document.visibilityState === 'visible' ? fetchLive() : Promise.resolve(); go.then(function () { setTimeout(poll, 1500) }) })();
+  function fetchStats() {
+    return fetch('api/stats', { cache: 'no-store' }).then(function (r) { return r.json() }).then(function (list) { sessions = list.map(toSession).filter(Boolean); rail(); renderStats() }).catch(function () {});
+  }
+  fetchStats(); setInterval(function () { if (document.visibilityState === 'visible' && state.view === 'stats') fetchStats() }, 60000);
+  function postEdit(edit, said) {
+    fetch('api/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(edit) })
+      .then(function (r) { if (!r.ok) throw new Error(); sent.unshift(said); setTimeout(fetchLive, 250) })
+      .catch(function () { conn(false, 'The edit did not reach Claude Code') });
+  }
+
+  // ---- live ---------------------------------------------------------------------------------
+  var W = 168, H = 52, GX = 40, GY = 14, PAD = 16;
+  var MARK = { done: '✓', running: '▶', pending: '○', skipped: '–' };
+  function renderLive() {
+    var s = live && live.session;
+    $('live-dot').classList.toggle('on', !!live && !!live.at);
+    $('session').innerHTML = s ? '<span>Session <b>' + esc(s.title || s.project) + '</b></span><span>Cost <b>' + fmtCost(s.cost) + '</b> (last ' + fmtCost(s.lastCost) + ')</span><span>Agent time <b>' + ago(s.agentMs) + '</b></span><span>Tokens <b>' + fmtTok(s.tokens) + '</b></span><span>Turns <b>' + s.turns + '</b></span>' : '';
+    renderPlan(); renderRuns();
+  }
+
+  function level(plan, step) { return plan.steps.filter(function (x) { return (x.parent || null) === (step.parent || null) }) }
+  function byId(plan, id) { return plan.steps.find(function (x) { return x.id === id }) }
+
+  function renderPlan() {
+    var plan = live && live.plan;
+    $('plan-empty').hidden = !!plan; $('plan-body').hidden = !plan; $('plan-progress').hidden = !plan;
+    if (!plan) { $('plan-title').textContent = 'Plan'; return }
+    $('plan-title').textContent = plan.title;
+    $('plan-count').textContent = plan.progress.done + '/' + plan.progress.total;
+    $('plan-bar').style.width = (plan.progress.done / Math.max(1, plan.progress.total) * 100) + '%';
+    if (!byId(plan, state.sel)) { var cur = plan.steps.find(function (x) { return x.status === 'running' }) || plan.steps.find(function (x) { return x.status === 'pending' }) || plan.steps[0]; state.sel = cur && cur.id }
+
+    var tops = plan.steps.filter(function (x) { return !x.parent });
+    var pos = {}, deepest = 0;
+    tops.forEach(function (t, i) {
+      var x = PAD + i * (W + GX); pos[t.id] = { x: x, y: PAD };
+      var micro = plan.steps.filter(function (m) { return m.parent === t.id });
+      micro.forEach(function (m, k) { pos[m.id] = { x: x + 22, y: PAD + (k + 1) * (H + GY) } });
+      deepest = Math.max(deepest, micro.length);
+    });
+    var width = PAD * 2 + tops.length * W + Math.max(0, tops.length - 1) * GX + 22, height = PAD * 2 + H + deepest * (H + GY);
+    var svg = sv('svg', { width: width, height: height, viewBox: '0 0 ' + width + ' ' + height, role: 'img', 'aria-label': 'Plan graph' });
+    tops.forEach(function (t, i) {
+      var next = tops[i + 1]; if (!next) return;
+      var a = pos[t.id], y = a.y + H / 2;
+      svg.appendChild(sv('path', { class: 'edge' + (t.status === 'done' ? ' on' : ''), d: 'M' + (a.x + W) + ' ' + y + 'H' + pos[next.id].x }));
+      if (!t.can.add) return;
+      var g = sv('g', { class: 'plus', tabindex: '0', role: 'button', 'aria-label': 'Add a micro-step to step ' + t.id });
+      var cx = a.x + W + GX / 2;
+      g.appendChild(sv('circle', { cx: cx, cy: y, r: 9 }));
+      var tx = sv('text', { x: cx, y: y + 4.5, 'text-anchor': 'middle' }); tx.textContent = '+'; g.appendChild(tx);
+      var go = function () { state.sel = t.id; state.adding = t.id; renderPlan(); var i = $('new-step'); if (i) i.focus() };
+      g.addEventListener('click', go); g.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go() });
+      svg.appendChild(g);
+    });
+    plan.steps.forEach(function (m) {
+      if (!m.parent) return; var p = pos[m.parent], b = pos[m.id];
+      svg.appendChild(sv('path', { class: 'edge', d: 'M' + (p.x + 11) + ' ' + (p.y + H) + 'V' + (b.y + H / 2) + 'H' + b.x }));
+    });
+    plan.steps.forEach(function (st) {
+      var p = pos[st.id], movable = st.can.up || st.can.down;
+      var g = sv('g', { class: 'node ' + st.status + (state.sel === st.id ? ' sel' : '') + (movable ? ' drag' : ''), tabindex: '0', role: 'button', 'data-id': st.id, 'aria-label': 'Step ' + st.id + ': ' + st.text });
+      g.appendChild(sv('rect', { class: 'box', x: p.x, y: p.y, width: W, height: H, rx: 8 }));
+      g.appendChild(sv('rect', { x: p.x, y: p.y + 10, width: 3, height: H - 20, rx: 1.5, fill: css(st.status === 'done' ? '--done' : st.status === 'running' ? '--run' : '--faint') }));
+      var t1 = sv('text', { class: 't', x: p.x + 13, y: p.y + 22 }); t1.textContent = MARK[st.status] + ' ' + st.id + '  ' + (st.text.length > 17 ? st.text.slice(0, 16) + '…' : st.text);
+      var sub = st.status === 'running' ? 'running' + (st.startedAt ? ' · ' + ago(Date.now() - st.startedAt) : '') : st.status === 'done' ? 'done' + (st.startedAt && st.endedAt ? ' · ' + ago(st.endedAt - st.startedAt) : '') : st.status === 'skipped' ? 'skipped' : st.byUser ? 'added by you' : st.editedByUser ? 'edited by you' : 'pending';
+      var t2 = sv('text', { class: 's', x: p.x + 13, y: p.y + 39 }); t2.textContent = sub;
+      var tt = sv('title'); tt.textContent = st.id + ' ' + st.text;
+      g.appendChild(tt); g.appendChild(t1); g.appendChild(t2);
+      g.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { state.sel = st.id; state.adding = null; renderPlan() } });
+      if (movable) dragFrom(g, plan, st); else g.addEventListener('click', function () { state.sel = st.id; state.adding = null; renderPlan() });
+      svg.appendChild(g);
+    });
+    var box = $('graph'), keep = box.scrollLeft; box.innerHTML = ''; box.appendChild(svg); box.scrollLeft = keep;
+    inspector(plan);
+  }
+
+  // Drag a pending step onto another of its level to put it there; a plain click selects it.
+  function dragFrom(g, plan, st) {
+    g.addEventListener('pointerdown', function (ev) {
+      var startX = ev.clientX, startY = ev.clientY, moved = false, target = null;
+      g.setPointerCapture(ev.pointerId);
+      var onMove = function (e) {
+        if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;
+        moved = true; g.classList.add('dragging');
+        var under = document.elementFromPoint(e.clientX, e.clientY); var n = under && under.closest && under.closest('[data-id]');
+        var id = n && n.getAttribute('data-id'), cand = id && byId(plan, id);
+        document.querySelectorAll('.node.drop').forEach(function (x) { x.classList.remove('drop') });
+        target = cand && cand !== st && (cand.parent || null) === (st.parent || null) && cand.status === 'pending' ? cand : null;
+        if (target) n.classList.add('drop');
+      };
+      var onUp = function () {
+        g.releasePointerCapture(ev.pointerId); g.removeEventListener('pointermove', onMove); g.removeEventListener('pointerup', onUp);
+        if (!moved) { state.sel = st.id; state.adding = null; renderPlan(); return }
+        if (!target) { renderPlan(); return }
+        var lv = level(plan, st), from = lv.indexOf(st), to = lv.indexOf(target);
+        var before = to > from ? (lv[to + 1] ? lv[to + 1].id : null) : target.id;
+        postEdit({ op: 'move', id: st.id, before: before }, 'Moved ' + st.id + (to > from ? ' after ' : ' before ') + target.id + '.');
+      };
+      g.addEventListener('pointermove', onMove); g.addEventListener('pointerup', onUp);
+    });
+  }
+
+  function inspector(plan) {
+    var st = byId(plan, state.sel), box = $('inspector');
+    var active = document.activeElement && document.activeElement.closest && document.activeElement.closest('#inspector');
+    if (active && active.tagName === 'INPUT' && box.dataset.for === (st && st.id) + '|' + state.adding) return;
+    box.innerHTML = ''; box.dataset.for = (st && st.id) + '|' + state.adding;
+    if (live.refused) box.appendChild(el('p', { class: 'refused' }, esc(live.refused)));
+    if (!st) { box.appendChild(el('p', { class: 'hint' }, 'Select a step.')); return }
+    var top = st.parent ? byId(plan, st.parent) : st;
+    box.appendChild(el('div', { class: 'label' }, 'Step ' + esc(st.id) + ' · ' + st.status + (st.byUser ? ' · added by you' : '')));
+    var text = el('input', { id: 'step-text', 'aria-label': 'Step text' }); text.value = st.text; text.disabled = !st.can.edit;
+    text.addEventListener('keydown', function (e) { if (e.key === 'Enter' && text.value.trim() && text.value.trim() !== st.text) postEdit({ op: 'edit', id: st.id, text: text.value }, 'Renamed ' + st.id + '.') });
+    box.appendChild(text);
+    if (state.adding === st.id && st.can.add) {
+      var nw = el('input', { id: 'new-step', placeholder: 'New micro-step after ' + st.id, 'aria-label': 'New micro-step' });
+      nw.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && nw.value.trim()) { state.adding = null; postEdit({ op: 'add', after: st.id, text: nw.value }, 'Added a micro-step after ' + st.id + '.') }
+        if (e.key === 'Escape') { state.adding = null; renderPlan() }
+      });
+      box.appendChild(nw);
+    }
+    var btns = el('div', { class: 'btns' });
+    var act = function (label, cls, fn) { var b = el('button', { class: 'btn ' + cls, type: 'button' }, label); b.onclick = fn; btns.appendChild(b) };
+    var move = function (dir) { var lv = level(plan, st), i = lv.indexOf(st), b = dir < 0 ? lv[i - 1] : lv[i + 2]; postEdit({ op: 'move', id: st.id, before: b ? b.id : null }, 'Moved ' + st.id + (dir < 0 ? ' up.' : ' down.')) };
+    if (st.can.edit) act('Save text', '', function () { if (text.value.trim() && text.value.trim() !== st.text) postEdit({ op: 'edit', id: st.id, text: text.value }, 'Renamed ' + st.id + '.') });
+    if (st.can.add) act('+ Micro-step after', 'primary', function () { state.adding = st.id; renderPlan(); var i = $('new-step'); if (i) i.focus() });
+    if (st.can.up) act('↑', '', function () { move(-1) });
+    if (st.can.down) act('↓', '', function () { move(1) });
+    if (st.can.skip) act('Skip', '', function () { postEdit({ op: 'skip', id: st.id }, 'Skipped ' + st.id + '.') });
+    if (st.can.restore) act('Restore', '', function () { postEdit({ op: 'restore', id: st.id }, 'Restored ' + st.id + '.') });
+    if (st.can.remove && st.byUser) act('Remove', 'danger', function () { postEdit({ op: 'remove', id: st.id }, 'Removed ' + st.id + '.') });
+    if (btns.children.length) box.appendChild(btns);
+    if (top && top.status === 'done') box.appendChild(el('p', { class: 'hint' }, 'Step ' + esc(top.id) + ' is done: its section is locked.'));
+    else box.appendChild(el('p', { class: 'hint' }, 'Drag a pending step to reorder it. Claude reads every change at its next step.'));
+    if (sent.length) {
+      box.appendChild(el('div', { class: 'label' }, 'Sent to Claude'));
+      var log = el('ul', { class: 'log' }); sent.slice(0, 4).forEach(function (l) { log.appendChild(el('li', {}, esc(l))) }); box.appendChild(log);
+    }
+  }
+
+  function renderRuns() {
+    var agents = (live && live.agents) || [], tasks = (live && live.tasks) || [], now = Date.now();
+    var a = $('agents'); a.innerHTML = '';
+    var ordered = [];
+    agents.filter(function (x) { return !x.parentId || !agents.some(function (y) { return y.id === x.parentId }) }).forEach(function (x) {
+      ordered.push([x, 0]); agents.filter(function (c) { return c.parentId === x.id }).forEach(function (c) { ordered.push([c, 1]) });
+    });
+    ordered.slice(-14).forEach(function (pair) {
+      var x = pair[0];
+      a.appendChild(el('div', { class: 'row' + (pair[1] ? ' indent' : '') },
+        '<span class="st ' + x.status + '" title="' + x.status + '"></span><span class="chip" title="' + esc(x.type) + '">' + esc(x.type) + '</span>' +
+        '<span class="what" title="' + esc(x.description) + '">' + esc(x.description) + (x.background ? ' <span class="chip">bg</span>' : '') + '</span>' +
+        '<span class="meta num">' + ago((x.endedAt || now) - x.startedAt) + ' · ' + fmtTok(x.tokens) + ' tok · ' + x.tools + ' tools' + (x.status === 'running' && x.lastTool ? ' · ' + esc(x.lastTool) : '') + '</span>'));
+    });
+    if (!agents.length) a.appendChild(el('p', { class: 'empty' }, 'No subagents in this session yet.'));
+    $('agents-sub').textContent = agents.length ? agents.filter(function (x) { return x.status === 'running' }).length + ' running · ' + agents.length + ' this session' : '';
+    var b = $('bg'); b.innerHTML = '';
+    tasks.slice().reverse().slice(0, 12).forEach(function (x) {
+      b.appendChild(el('div', { class: 'row' },
+        '<span class="st ' + x.status + '" title="' + x.status + '"></span><span class="chip">' + esc(x.kind) + '</span>' +
+        '<span class="what mono" title="' + esc(x.label) + '">' + esc(x.label) + '</span><span class="meta num">' + ago((x.endedAt || now) - x.startedAt) + '</span>'));
+    });
+    if (!tasks.length) b.appendChild(el('p', { class: 'empty' }, 'Nothing has run in the background yet.'));
+    $('bg-sub').textContent = tasks.length ? tasks.filter(function (x) { return x.status === 'running' }).length + ' running' : '';
+  }
+
+  // ---- stats --------------------------------------------------------------------------------
+  function startOfDay(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime() }
+  var TODAY = startOfDay(Date.now());
+  function toSession(r) {
+    var t = Date.parse(r.started); if (isNaN(t)) return null;
+    return { day: Math.round((startOfDay(t) - TODAY) / DAY), date: new Date(t), project: r.project || 'other', title: r.title || '(untitled)', model: (r.model || '').replace(/^claude-/, ''),
+      min: +r.agent_minutes || 0, cost: +r.cost_usd || 0, tok: +r.tokens || 0, turns: +r.turns || 0 };
+  }
+  function rail() {
+    var counts = {}; sessions.forEach(function (s) { counts[s.project] = (counts[s.project] || 0) + 1 });
+    var last = {}; sessions.forEach(function (s) { last[s.project] = Math.max(last[s.project] || 0, s.date) });
+    projects = Object.keys(counts).sort(function (a, b) { return last[b] - last[a] });
+    var ul = $('projects'); ul.innerHTML = '';
+    ['all'].concat(projects).forEach(function (p, i) {
+      var b = el('button', { 'aria-pressed': String(state.project === p) },
+        '<span class="sw" style="background:' + (p === 'all' ? 'var(--faint)' : 'var(' + COLORS[(i - 1) % COLORS.length] + ')') + '"></span><span>' + (p === 'all' ? 'All projects' : esc(p)) + '</span><span class="count num">' + (p === 'all' ? sessions.length : counts[p]) + '</span>');
+      b.onclick = function () { state.project = p; rail(); renderStats() };
+      var li = el('li'); li.appendChild(b); ul.appendChild(li);
+    });
+  }
+  function colorOf(p) { return 'var(' + COLORS[projects.indexOf(p) % COLORS.length] + ')' }
+  function scoped() { return sessions.filter(function (s) { return state.project === 'all' || s.project === state.project }) }
+  function span() { if (state.range) return state.range; var min = sessions.reduce(function (a, s) { return Math.min(a, s.day) }, 0); return Math.max(7, 1 - min) }
+  function inRange(s, from, to) { return s.day > -from && s.day <= -to }
+  function sum(list, k) { return list.reduce(function (a, s) { return a + s[k] }, 0) }
+  function series(list, k, n) { var out = new Array(n).fill(0); list.forEach(function (s) { var i = n - 1 + s.day; if (i >= 0 && i < n) out[i] += k === 'one' ? 1 : s[k] }); return out }
+  function smooth(pts) {
+    var n = pts.length; if (n < 2) return pts.length ? 'M' + pts[0][0] + ',' + pts[0][1] : '';
+    var dx = [], m = [], t = [], i;
+    for (i = 0; i < n - 1; i++) { dx[i] = pts[i + 1][0] - pts[i][0]; m[i] = (pts[i + 1][1] - pts[i][1]) / dx[i] }
+    t[0] = m[0]; t[n - 1] = m[n - 2];
+    for (i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : 3 * (dx[i - 1] + dx[i]) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
+    var d = 'M' + pts[0][0].toFixed(1) + ',' + pts[0][1].toFixed(1);
+    for (i = 0; i < n - 1; i++) { var h = dx[i] / 3; d += 'C' + (pts[i][0] + h).toFixed(1) + ',' + (pts[i][1] + t[i] * h).toFixed(1) + ' ' + (pts[i + 1][0] - h).toFixed(1) + ',' + (pts[i + 1][1] - t[i + 1] * h).toFixed(1) + ' ' + pts[i + 1][0].toFixed(1) + ',' + pts[i + 1][1].toFixed(1) }
+    return d;
+  }
+  function renderStats() { if (state.view !== 'stats') return; kpis(); chart(); table(); heat() }
+  function kpis() {
+    var n = span(), all = scoped(), cur = all.filter(function (s) { return inRange(s, n, 0) });
+    var prev = state.range ? all.filter(function (s) { return inRange(s, 2 * n, n) }) : null;
+    var defs = [
+      { k: 'one', name: 'Sessions', c: '--p1', v: cur.length, p: prev && prev.length, f: String },
+      { k: 'min', name: 'Agent time', c: '--done', v: sum(cur, 'min'), p: prev && sum(prev, 'min'), f: fmtMin },
+      { k: 'cost', name: 'Cost', c: '--run', v: sum(cur, 'cost'), p: prev && sum(prev, 'cost'), f: fmtCost },
+      { k: 'tok', name: 'Tokens', c: '--p2', v: sum(cur, 'tok'), p: prev && sum(prev, 'tok'), f: fmtTok }
+    ];
+    var box = $('kpis'); box.innerHTML = '';
+    defs.forEach(function (k) {
+      var delta = k.p ? Math.round((k.v - k.p) / k.p * 100) : null;
+      var card = el('div', { class: 'kpi' }, '<span class="label">' + k.name + '</span><span class="v num">' + k.f(k.v) + '</span><span class="d num' + (delta > 0 ? ' up' : '') + '">' +
+        (delta == null ? (state.range ? 'no earlier data' : 'all time') : (delta > 0 ? '+' : '') + delta + '% vs previous ' + n + 'd') + '</span>');
+      var raw = series(cur, k.k, n), s = raw.map(function (_, i, a) { var w = a.slice(Math.max(0, i - 6), i + 1); return w.reduce(function (x, y) { return x + y }, 0) / w.length });
+      var SW = 240, SH = 46, max = Math.max.apply(null, s) || 1;
+      var pts = s.map(function (v, i) { return [i / Math.max(1, s.length - 1) * SW, SH - 4 - v / max * (SH - 10)] });
+      var svg = sv('svg', { viewBox: '0 0 ' + SW + ' ' + SH, height: SH, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+      var defsEl = sv('defs'), lg = sv('linearGradient', { id: 'g' + k.k, x1: 0, x2: 0, y1: 0, y2: 1 });
+      lg.appendChild(sv('stop', { offset: '0', 'stop-color': css(k.c), 'stop-opacity': '0.28' })); lg.appendChild(sv('stop', { offset: '1', 'stop-color': css(k.c), 'stop-opacity': '0' }));
+      defsEl.appendChild(lg); svg.appendChild(defsEl);
+      var line = smooth(pts);
+      svg.appendChild(sv('path', { d: line + 'L' + SW + ',' + SH + 'L0,' + SH + 'Z', fill: 'url(#g' + k.k + ')' }));
+      svg.appendChild(sv('path', { d: line, fill: 'none', stroke: css(k.c), 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' }));
+      card.appendChild(svg); box.appendChild(card);
+    });
+  }
+  function chart() {
+    var n = span(), k = state.metric, list = scoped().filter(function (s) { return inRange(s, n, 0) });
+    var ps = projects.filter(function (p) { return state.project === 'all' || p === state.project });
+    var layers = ps.map(function (p) { return { p: p, v: series(list.filter(function (s) { return s.project === p }), k, n) } });
+    var totals = []; for (var i = 0; i < n; i++) totals.push(layers.reduce(function (a, l) { return a + l.v[i] }, 0));
+    var max = Math.max.apply(null, totals.concat([k === 'cost' ? 1 : k === 'tok' ? 1000 : 10]));
+    var step = Math.pow(10, Math.floor(Math.log10(max / 4))), nice = [1, 2, 2.5, 5, 10].map(function (x) { return x * step }).find(function (x) { return max / x <= 4 }) || step * 10;
+    var top = Math.ceil(max / nice) * nice;
+    var box = $('chart'), CW = Math.max(560, box.clientWidth || 800), CH = 240, L = 56, R = 12, T = 12, B = 26;
+    var x = function (i) { return L + i / Math.max(1, n - 1) * (CW - L - R) }, y = function (v) { return T + (1 - v / top) * (CH - T - B) };
+    var svg = sv('svg', { width: CW, height: CH, viewBox: '0 0 ' + CW + ' ' + CH, role: 'img', 'aria-label': NAMES[k] + ' per day, by project' });
+    for (var g = 0; g <= top + 1e-9; g += nice) {
+      svg.appendChild(sv('line', { class: 'grid', x1: L, x2: CW - R, y1: y(g), y2: y(g) }));
+      var lab = sv('text', { class: 'axis', x: L - 8, y: y(g) + 4, 'text-anchor': 'end' }); lab.textContent = FMT[k](g); svg.appendChild(lab);
+    }
+    var ticks = Math.min(6, n);
+    for (var t = 0; t < ticks; t++) {
+      var di = Math.round(t / Math.max(1, ticks - 1) * (n - 1));
+      var l2 = sv('text', { class: 'axis', x: x(di), y: CH - 6, 'text-anchor': t === 0 ? 'start' : t === ticks - 1 ? 'end' : 'middle' });
+      l2.textContent = fmtDay(new Date(TODAY - (n - 1 - di) * DAY)); svg.appendChild(l2);
+    }
+    var base = totals.map(function () { return 0 });
+    layers.forEach(function (l) {
+      var hi = base.map(function (b, i) { return b + l.v[i] });
+      var up = hi.map(function (v, i) { return [x(i), y(v)] }), dn = base.map(function (v, i) { return [x(i), y(v)] }).reverse();
+      var d = smooth(up) + 'L' + dn[0][0] + ',' + dn[0][1] + smooth(dn).slice(1).replace(/^[^C]*/, '') + 'Z';
+      svg.appendChild(sv('path', { d: d, fill: css(COLORS[projects.indexOf(l.p) % COLORS.length]), 'fill-opacity': 0.55, stroke: css(COLORS[projects.indexOf(l.p) % COLORS.length]), 'stroke-width': 1 }));
+      base = hi;
+    });
+    var cursor = sv('line', { x1: 0, x2: 0, y1: T, y2: CH - B, stroke: css('--muted'), 'stroke-dasharray': '3 3', visibility: 'hidden' });
+    svg.appendChild(cursor); box.innerHTML = ''; box.appendChild(svg);
+    var tip = el('div', { class: 'tip', hidden: '' }); box.appendChild(tip);
+    svg.addEventListener('mousemove', function (ev) {
+      var r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * CW / r.width;
+      var i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (CW - L - R) * (n - 1))));
+      cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('visibility', 'visible');
+      tip.innerHTML = '<div class="label" style="margin-bottom:4px">' + new Date(TODAY - (n - 1 - i) * DAY).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) + '</div>' +
+        layers.map(function (l) { return '<div class="r"><span class="sw" style="background:' + colorOf(l.p) + '"></span>' + esc(l.p) + '<b class="num">' + FMT[k](l.v[i]) + '</b></div>' }).join('');
+      tip.hidden = false; var left = x(i) + 14; if (left + 190 > CW) left = x(i) - 204; tip.style.left = left + 'px'; tip.style.top = '12px';
+    });
+    svg.addEventListener('mouseleave', function () { tip.hidden = true; cursor.setAttribute('visibility', 'hidden') });
+    $('chart-title').textContent = NAMES[k];
+    $('chart-sub').textContent = FMT[k](totals.reduce(function (a, b) { return a + b }, 0)) + (state.range ? ' in the last ' + n + ' days' : ' all time');
+    $('legend').innerHTML = layers.length ? layers.map(function (l) { return '<span><span class="sw" style="background:' + colorOf(l.p) + '"></span> ' + esc(l.p) + '</span>' }).join('') : '<span>No sessions in this period.</span>';
+  }
+  function table() {
+    var n = span(), q = state.q.toLowerCase();
+    var list = scoped().filter(function (s) { return inRange(s, n, 0) && (!q || (s.title + ' ' + s.project + ' ' + s.model).toLowerCase().indexOf(q) >= 0) }).sort(function (a, b) { return b.date - a.date });
+    var maxMin = Math.max.apply(null, list.map(function (s) { return s.min }).concat([1]));
+    $('sess-sub').textContent = list.length;
+    $('rows').innerHTML = list.slice(0, 60).map(function (s) {
+      return '<tr><td class="name">' + esc(s.title) + '<small>' + esc(s.project) + ' · ' + fmtDay(s.date) + ', ' + s.date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) + '</small><div class="tbar" style="width:' + (s.min / maxMin * 100).toFixed(0) + '%"></div></td>' +
+        '<td class="r">' + fmtMin(s.min) + '</td><td class="r">' + fmtCost(s.cost) + '</td><td class="r">' + fmtTok(s.tok) + '</td><td class="r">' + s.turns + '</td><td>' + esc(s.model) + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" style="color:var(--muted)">' + (sessions.length ? 'No sessions match.' : 'No sessions yet. Run /board-import in Claude Code to add your past ones.') + '</td></tr>';
+  }
+  function heat() {
+    var list = scoped(), per = {};
+    list.forEach(function (s) { if (s.day > -84) per[s.day] = (per[s.day] || 0) + s.min });
+    var max = Math.max.apply(null, Object.keys(per).map(function (k) { return per[k] }).concat([1]));
+    var R = 10, w = Math.sqrt(3) * R, cols = 12, HW = 34 + cols * w + w / 2 + 4, HH = 7 * R * 1.5 + R + 4;
+    var svg = sv('svg', { viewBox: '0 0 ' + HW + ' ' + HH, width: '100%', role: 'img', 'aria-label': 'Agent time per day over the last 12 weeks' });
+    ['Mon', 'Wed', 'Fri'].forEach(function (d, i) { var t = sv('text', { class: 'axis', x: 0, y: R + 6 + i * 2 * R * 1.5 }); t.textContent = d; svg.appendChild(t) });
+    var start = -83 - ((new Date(TODAY).getDay() + 6) % 7);
+    for (var c = 0; c < cols; c++) for (var r = 0; r < 7; r++) {
+      var day = start + c * 7 + r; if (day > 0) continue;
+      var v = per[day] || 0, lvl = v === 0 ? 0 : Math.min(4, 1 + Math.floor(v / max * 3.999));
+      var cx = 34 + c * w + (r % 2 ? w / 2 : 0) + w / 2, cy = R + 2 + r * R * 1.5, pts = [];
+      for (var a = 0; a < 6; a++) { var ang = Math.PI / 180 * (60 * a - 30); pts.push((cx + (R - 1.2) * Math.cos(ang)).toFixed(1) + ',' + (cy + (R - 1.2) * Math.sin(ang)).toFixed(1)) }
+      var hex = sv('polygon', { points: pts.join(' '), fill: css('--heat-' + lvl) }), tt = sv('title');
+      tt.textContent = fmtDay(new Date(TODAY + day * DAY)) + ': ' + (v ? fmtMin(v) : 'no activity'); hex.appendChild(tt); svg.appendChild(hex);
+    }
+    var box = $('heat'); box.innerHTML = ''; box.appendChild(svg);
+    box.appendChild(el('div', { class: 'legend', style: 'justify-content:flex-end;margin-top:4px' }, 'Less ' + [0, 1, 2, 3, 4].map(function (l) { return '<span class="sw" style="background:var(--heat-' + l + ')"></span>' }).join(' ') + ' More'));
+    var active = Object.keys(per).length, streak = 0, best = 0, run = 0, d;
+    for (d = -83; d <= 0; d++) { if (per[d]) { run++; best = Math.max(best, run) } else run = 0 }
+    for (d = per[0] ? 0 : -1; d > -84 && per[d]; d--) streak++;
+    var n = span(), cur = list.filter(function (s) { return inRange(s, n, 0) }), byDay = {};
+    cur.forEach(function (s) { byDay[s.day] = (byDay[s.day] || 0) + s.min });
+    var busiest = Object.keys(byDay).sort(function (a, b) { return byDay[b] - byDay[a] })[0];
+    var longest = cur.reduce(function (a, s) { return !a || s.min > a.min ? s : a }, null);
+    $('facts').innerHTML =
+      '<div><div class="label">Active days</div><div class="v num">' + active + '</div><p class="hint">' + Math.round(active / 84 * 100) + '% of the last 84 days</p></div>' +
+      '<div><div class="label">Streak</div><div class="v num">' + streak + ' day' + (streak === 1 ? '' : 's') + '</div><p class="hint">longest ' + best + ' days</p></div>' +
+      '<dl class="num"><dt>Busiest day</dt><dd>' + (busiest ? fmtDay(new Date(TODAY + busiest * DAY)) + ' · ' + fmtMin(byDay[busiest]) : '–') + '</dd>' +
+      '<dt>Longest session</dt><dd>' + (longest ? fmtMin(longest.min) : '–') + '</dd>' +
+      '<dt>Average per session</dt><dd>' + (cur.length ? fmtMin(sum(cur, 'min') / cur.length) : '–') + '</dd>' +
+      '<dt>Average cost per session</dt><dd>' + (cur.length ? fmtCost(sum(cur, 'cost') / cur.length) : '–') + '</dd></dl>';
+  }
+
+  // ---- wiring -------------------------------------------------------------------------------
+  function show(view) {
+    state.view = view; store.set('view', view);
+    document.querySelectorAll('.tabs button').forEach(function (x) { x.setAttribute('aria-selected', String(x.dataset.view === view)) });
+    $('view-live').hidden = view !== 'live'; $('view-stats').hidden = view !== 'stats'; $('range').hidden = view !== 'stats'; $('rail').hidden = view !== 'stats';
+    if (view === 'stats') fetchStats();
+  }
+  document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { show(b.dataset.view) } });
+  document.querySelectorAll('#range button').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(+b.dataset.r === state.range));
+    b.onclick = function () { state.range = +b.dataset.r; store.set('range', state.range); document.querySelectorAll('#range button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)) }); renderStats() };
+  });
+  document.querySelectorAll('#metric button').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(b.dataset.m === state.metric));
+    b.onclick = function () { state.metric = b.dataset.m; store.set('metric', state.metric); document.querySelectorAll('#metric button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)) }); chart() };
+  });
+  $('q').addEventListener('input', function (e) { state.q = e.target.value; table() });
+  var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (state.view === 'stats') chart() }, 150) });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') fetchLive() });
+  show(state.view);
+})();
+</script>
+</body>
+</html>
