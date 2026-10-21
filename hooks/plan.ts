@@ -3,6 +3,8 @@ import type { Plan, Step } from '../types'
 
 export type Edit =
   | { op: 'add'; after: string; text: string }
+  /** A new top-level step after a step's row (`after` null: at the end). */
+  | { op: 'insert'; after: string | null; text: string }
   | { op: 'edit'; id: string; text: string }
   | { op: 'skip'; id: string }
   | { op: 'restore'; id: string }
@@ -85,12 +87,19 @@ function placeBlock(steps: Step[], block: Step[], before: Step | undefined, pare
   return [...rest.slice(0, at), ...block, ...rest.slice(at)]
 }
 
-/** A change the person made, from the pane or the board. */
-export function applyEdit(plan: Plan, edit: Edit): Outcome {
-  if (edit.op === 'add') return add(plan, edit.after, edit.text, true)
+/** Who changes the plan: the person (pane, board) or Claude (its tool). */
+export type By = 'user' | 'claude'
+
+/** A change to the plan. The same locks hold for both; Claude may not rename, skip or remove a step the person added or changed. */
+export function applyEdit(plan: Plan, edit: Edit, by: By = 'user'): Outcome {
+  if (edit.op === 'add') return add(plan, edit.after, edit.text, by === 'user')
+  if (edit.op === 'insert') return insert(plan, edit.after, edit.text, by === 'user')
   const step = find(plan, edit.id)
   if (!step) return { error: `Step ${edit.id} no longer exists.` }
   if (isLocked(plan, step)) return { error: `Step ${section(plan, step)!.id} is done: its section can no longer change.` }
+  if (by === 'claude' && (step.byUser || step.editedByUser) && (edit.op === 'edit' || edit.op === 'skip' || edit.op === 'remove')) {
+    return { error: `Step ${step.id} was added or changed by the user: ask them before changing it.` }
+  }
   const can = allowed(plan, step)
   const swap = (fields: Partial<Step>) => plan.steps.map(s => (s === step ? { ...s, ...fields } : s))
 
@@ -99,7 +108,8 @@ export function applyEdit(plan: Plan, edit: Edit): Outcome {
       const text = clean(edit.text)
       if (!text) return { error: 'A step needs some text.' }
       if (text === step.text) return { error: 'Nothing changed.' }
-      return { plan: { ...plan, steps: swap({ text, editedByUser: !step.byUser }) }, note: `renamed step ${step.id} to ${quote(text)}` }
+      const flags = by === 'user' ? { editedByUser: !step.byUser } : {}
+      return { plan: { ...plan, steps: swap({ text, ...flags }) }, note: `renamed step ${step.id} to ${quote(text)}` }
     }
     case 'skip': {
       if (!can.skip) return { error: `Step ${step.id} has already started.` }
@@ -161,6 +171,25 @@ export function add(plan: Plan, after: string, text: string, byUser: boolean): O
     plan: { ...plan, steps: [...plan.steps.slice(0, at), step, ...plan.steps.slice(at)] },
     note: `added step ${step.id} ${quote(body)} to step ${top.id}`,
   }
+}
+
+/** Adds a top-level step after the row of `after` (its parallel siblings and micro-steps included), or at the end. */
+export function insert(plan: Plan, after: string | null, text: string, byUser: boolean): Outcome {
+  const body = clean(text)
+  if (!body) return { error: 'A step needs some text.' }
+  let at = plan.steps.length
+  if (after !== null) {
+    const anchor = find(plan, after)
+    if (!anchor) return { error: `Step ${after} no longer exists.` }
+    const top = section(plan, anchor)!
+    const row = new Set(plan.steps.filter(s => s === top || (top.group && s.group === top.group)).map(s => s.id))
+    at = plan.steps.map(s => row.has(s.id) || (s.parent !== undefined && row.has(s.parent))).lastIndexOf(true) + 1
+  }
+  // A new number past every top-level one: ids stay stable for Claude and the person; the list order is the plan's order.
+  const n = Math.max(0, ...plan.steps.filter(s => !s.parent).map(s => parseInt(s.id, 10) || 0)) + 1
+  const step: Step = { id: String(n), text: body, status: 'pending', ...(byUser ? { byUser } : {}) }
+  const where = after === null ? 'at the end' : `after step ${after}`
+  return { plan: { ...plan, steps: [...plan.steps.slice(0, at), step, ...plan.steps.slice(at)] }, note: `added step ${step.id} ${quote(body)} ${where}` }
 }
 
 /** Claude's own progress. A step can be marked done only while no step the person added is left behind. */

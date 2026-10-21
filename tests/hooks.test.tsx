@@ -88,6 +88,19 @@ test('parallel steps come in as an inner list and are marked in the plan Claude 
   expect(String(set.result)).toMatch(/\[ \] 2b ui \(parallel with 2a\)/)
 })
 
+test("Claude's tool changes the plan, and refuses what the locks forbid", async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await plan($, { action: 'set', title: 'P', steps: ['a', 'b', 'c'] })
+  await plan($, { action: 'done', id: '1' })
+  const inserted = await plan($, { action: 'insert', after: '2', text: 'nuovo step' })
+  expect(String(inserted.result)).toMatch(/\[ \] 2 b\n\[ \] 4 nuovo step\n\[ \] 3 c/)
+  const moved = await plan($, { action: 'move', id: '3', before: '4' })
+  expect(String(moved.result)).toMatch(/\[ \] 3 c\n\[ \] 4 nuovo step/)
+  const refused = await plan($, { action: 'edit', id: '1', text: 'changed' })
+  expect(String(refused.result)).toMatch(/^Not done: Step 1 is done/)
+})
+
 test('a command moved to the background by PowerShell shows in the band', async ($, on) => {
   // Registered before the engine's catch-all answer, so it is the one that answers PowerShell.
   on('tool.call', { tool: 'PowerShell' } as never, () => ({ result: { stdout: '', backgroundTaskId: 'b304' } }))

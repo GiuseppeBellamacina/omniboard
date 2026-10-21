@@ -67,6 +67,27 @@ test('Claude cannot close the plan while a step the user added is open', async (
   expect('error' in mark(plan, '2', 'done', 3)).toBe(false)
 })
 
+test('Claude can insert, rename, skip and move its own steps, but not the ones the user added or changed', async () => {
+  let plan = newPlan('P', ['read', ['api', 'ui'], 'test'], 0)
+  plan = ok(applyEdit(plan, { op: 'insert', after: '2b', text: 'migrate the db' }, 'claude'))
+  plan = ok(applyEdit(plan, { op: 'insert', after: null, text: 'release' }, 'claude'))
+  expect(plan.steps.map(s => s.id)).toEqual(['1', '2a', '2b', '4', '3', '5'])
+  expect(find(plan, '4')!.byUser).toBeUndefined()
+
+  plan = ok(applyEdit(plan, { op: 'edit', id: '3', text: 'run the tests' }, 'claude'))
+  expect(find(plan, '3')!.editedByUser).toBeUndefined()
+  plan = ok(applyEdit(plan, { op: 'move', id: '5', before: '3' }, 'claude'))
+  expect(plan.steps.filter(s => !s.parent).map(s => s.id)).toEqual(['1', '2a', '2b', '4', '5', '3'])
+
+  plan = ok(add(plan, '4', 'yours', true))
+  plan = ok(applyEdit(plan, { op: 'edit', id: '1', text: 'read all the code' }))
+  for (const edit of [{ op: 'edit', id: '4.1', text: 'x' }, { op: 'skip', id: '4.1' }, { op: 'remove', id: '4.1' }, { op: 'edit', id: '1', text: 'y' }] as const) {
+    expect('error' in applyEdit(plan, edit, 'claude')).toBe(true)
+  }
+  plan = ok(applyEdit(plan, { op: 'skip', id: '5' }, 'claude'))
+  expect(find(plan, '5')!.status).toBe('skipped')
+})
+
 test('skip and restore take the micro-steps along; remove drops them', async () => {
   let plan = newPlan('P', ['a', 'b'], 0)
   plan = ok(add(plan, '2', 'm', true))

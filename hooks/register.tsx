@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, BgTask, Plan, SessionStats, Step } from '../types'
 import { MARK, layout, svgSource, textChain } from './graph'
-import { add, allowed, applyEdit, describe, mark, newPlan, noteFor, progress } from './plan'
+import { allowed, applyEdit, describe, mark, newPlan, noteFor, progress } from './plan'
 import type { Edit } from './plan'
 import { elapsed, keyOf, money, projectName, rowOf, tokens, upsert, usageTokens } from './stats'
 
@@ -28,18 +28,20 @@ const TOOL_SPEC = {
   name: 'plan',
   description: `The user's live checklist of your plan, shown above the prompt and in their board. Use it whenever you carry out an approved plan or any task of three or more steps:
 - first call action "set" with a short title and the steps in order. Steps that run at the same time (for example subagents you start together) go as an inner list: ["Read the code", ["Write the API", "Write the UI"], "Test"]; they get ids like "2a" and "2b";
-- call "start" with a step id before working on it and "done" right after finishing it; "add" puts a micro-step after a step id;
+- call "start" with a step id before working on it and "done" right after finishing it;
+- when the work calls for it, change the plan instead of drifting from it: "insert" a new step (after a step id, or at the end with no "after"), "add" a micro-step after a step id, "edit" a step's text, "skip" or "remove" a step that has not started, "restore" a skipped one, "move" a pending step "before" another (or to the end). Finished steps are locked, and steps the user added or changed are theirs: ask them before changing those;
 - the user can add, rename, skip or reorder steps while you work: a note tells you, and every result of this tool shows the current plan ("get" reads it). Follow the plan as the user left it, including the steps they added.
 Never mark a step done that you did not complete.`,
   inputSchema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['set', 'start', 'done', 'add', 'get'] },
+      action: { type: 'string', enum: ['set', 'start', 'done', 'add', 'insert', 'edit', 'skip', 'restore', 'remove', 'move', 'get'] },
       title: { type: 'string' },
       steps: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] } },
-      id: { type: 'string', description: 'Step id, as listed in the plan (e.g. "3" or "3.1").' },
-      after: { type: 'string', description: 'For "add": the step id the new micro-step follows.' },
-      text: { type: 'string', description: 'For "add": the micro-step.' },
+      id: { type: 'string', description: 'Step id, as listed in the plan (e.g. "3", "3.1", "2a").' },
+      after: { type: 'string', description: 'For "add" and "insert": the step id the new step follows.' },
+      before: { type: 'string', description: 'For "move": the step id to put it before; leave out to move it to the end.' },
+      text: { type: 'string', description: 'For "add", "insert" and "edit": the step\'s text.' },
     },
     required: ['action'],
   },
@@ -93,7 +95,17 @@ async function answerTool($: EngineInterface, input: Record<string, unknown>): P
   } else if (action !== 'get') {
     if (!plan) problem = 'There is no plan yet: call this tool with action "set" first.'
     else {
-      const out = action === 'add' ? add(plan, String(input.after ?? ''), String(input.text ?? ''), false) : mark(plan, String(input.id ?? ''), action === 'done' ? 'done' : 'running', now)
+      const id = String(input.id ?? '')
+      const text = String(input.text ?? '')
+      const after = typeof input.after === 'string' && input.after ? input.after : null
+      const edit: Edit | undefined =
+        action === 'add' ? { op: 'add', after: after ?? '', text }
+        : action === 'insert' ? { op: 'insert', after, text }
+        : action === 'edit' ? { op: 'edit', id, text }
+        : action === 'skip' || action === 'restore' || action === 'remove' ? { op: action, id }
+        : action === 'move' ? { op: 'move', id, before: typeof input.before === 'string' && input.before ? input.before : null }
+        : undefined
+      const out = edit ? applyEdit(plan, edit, 'claude') : action === 'start' || action === 'done' ? mark(plan, id, action === 'done' ? 'done' : 'running', now) : { error: `Unknown action "${action}".` }
       if ('error' in out) problem = out.error
       else plan = out.plan
     }
