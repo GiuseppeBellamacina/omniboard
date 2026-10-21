@@ -56,7 +56,8 @@ test("Claude's plan tool is allowed without asking and drives the checklist", as
 
   for (const surface of ['terminal', 'desktop', 'vscode'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
-    expect(await ui.find({ type: 'Text', text: /▣ 1\/3 Testare/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /▣ 1\/3/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Testare/ })).toBeUndefined()
     await ui.unmount()
   }
 })

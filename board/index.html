@@ -371,8 +371,9 @@ th.r, td.r { text-align: right }
 
   function inspector(plan) {
     var st = byId(plan, state.sel), box = $('inspector');
-    var active = document.activeElement && document.activeElement.closest && document.activeElement.closest('#inspector');
-    if (active && active.tagName === 'INPUT' && box.dataset.for === (st && st.id) + '|' + state.adding) return;
+    // Leave the editor alone while the person types in it: a redraw would take their cursor away.
+    var focused = document.activeElement;
+    if (focused && focused.tagName === 'INPUT' && box.contains(focused) && box.dataset.for === (st && st.id) + '|' + state.adding) return;
     box.innerHTML = ''; box.dataset.for = (st && st.id) + '|' + state.adding;
     if (live.refused) box.appendChild(el('p', { class: 'refused' }, esc(live.refused)));
     if (!st) { box.appendChild(el('p', { class: 'hint' }, 'Select a step.')); return }

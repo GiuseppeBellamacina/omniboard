@@ -30,10 +30,12 @@ Requires a Claude Code build with plugin function hooks (mods) and [Node.js](htt
 One row, while a plan has open steps (one you approved, or steps Claude set for a longer task): the plan's progress and current step, the subagents and background tasks running meanwhile, and the session's cost, agent time and tokens. **▾** expands it (the choice is remembered), **Board** opens the browser board, **Plan** the checklist. With no plan running it does not show, and it steps aside while you type a slash command.
 
 ```text
-▣ 3/7 Migrare le route  │  ● 2 agents · ⧗ 1 bg  │  $4.21 · 12m04s · 1.2M tok     Board  Plan  ▾
+▣ 3/7 ■■■□□□□□  │  ● 2 agents · ⧗ 1 bg  │  $4.21 · 12m04s · 1.2M tok     Board  Plan  ▾
 ```
 
-Expanded, it lists the plan's steps, the running and latest subagents (type, task, time, tokens, the tool they are using) and the background tasks.
+The band keeps to the count and the progress bar; the steps themselves are in the checklist and the board.
+
+Expanded, it adds the plan's title, the running and latest subagents (type, task, time, tokens, the tool they are using) and the background tasks.
 
 ### `/checklist`: the plan you can edit
 

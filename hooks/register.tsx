@@ -440,7 +440,6 @@ export const register: Register = on => {
     if (!unfinished) return next(e)
     const below = await next(e).catch(() => undefined)
     const p = plan && progress(plan)
-    const current = plan?.steps.find(s => s.status === 'running') ?? plan?.steps.find(s => s.status === 'pending')
     const toggle = async () => {
       const value = !expanded
       await update($, expandedA, () => value)
@@ -449,12 +448,17 @@ export const register: Register = on => {
     const openPlan = () => $.ui.open({ id: PANE, title: 'Plan', focus: true })
     const stats = session ? `${money(session.cost)} · ${elapsed(session.agentMs)} · ${tokens(session.tokens)} tok` : 'no turn yet'
 
-    // One row: the summary, then the buttons. Claude Code already names the plugin above it.
+    // One row: progress (count and squares; the steps live in the checklist and the board), what runs, the totals,
+    // then the buttons. Claude Code already names the plugin above it.
+    const filled = p ? Math.round((p.done / Math.max(1, p.total)) * 8) : 0
     const summary = (
       <Box flexDirection="row" alignItems="center" gap={1}>
+        {p && <Text>▣ {p.done}/{p.total}</Text>}
+        {p && <Text color="success">{'■'.repeat(filled)}</Text>}
+        {p && <Text dimColor>{'□'.repeat(8 - filled)}</Text>}
         <Box flexGrow={1}>
           <Text wrap="truncate-end">
-            {plan && p ? `▣ ${p.done}/${p.total} ${current?.text ?? plan.title}   │   ` : ''}
+            {'  │  '}
             {runningAgents.length || runningTasks.length ? `● ${runningAgents.length} agent${runningAgents.length === 1 ? '' : 's'} · ⧗ ${runningTasks.length} bg   │   ` : ''}
             {stats}
           </Text>
@@ -467,24 +471,10 @@ export const register: Register = on => {
 
     const details = expanded && (
       <Box flexDirection="column">
-        {plan && p && (
-          <Box flexDirection="column">
-            <Box flexDirection="row" gap={1}>
-              <Text bold>Plan</Text>
-              <Text wrap="truncate-end">· {plan.title}</Text>
-              <Box flexGrow={1} />
-              <Text>{p.done}/{p.total}</Text>
-              <Text color="success">{'■'.repeat(Math.round((p.done / Math.max(1, p.total)) * 8))}</Text>
-              <Text dimColor>{'□'.repeat(8 - Math.round((p.done / Math.max(1, p.total)) * 8))}</Text>
-            </Box>
-            <Text wrap="truncate-end">
-              {'  '}
-              {plan.steps
-                .filter(s => !s.parent || s.status !== 'done')
-                .map(s => `${s.group ? '∥' : ''}${MARK[s.status]} ${s.parent || s.group ? s.id + ' ' : ''}${s.text.length > 22 ? s.text.slice(0, 21) + '…' : s.text}`)
-                .join('   ')}
-            </Text>
-          </Box>
+        {plan && (
+          <Text wrap="truncate-end">
+            <Text bold>Plan</Text> · {plan.title}
+          </Text>
         )}
         {agents.length > 0 && <Text bold>Agents</Text>}
         {[...runningAgents, ...agents.filter(a => a.status !== 'running').slice(-2)].slice(0, 5).map(a => (
