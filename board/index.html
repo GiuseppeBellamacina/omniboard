@@ -48,6 +48,8 @@ button { cursor: pointer }
 .conn.off { color: var(--warn) }
 
 .layout { max-width: 1240px; margin-inline: auto; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 16px 48px }
+/* Live has no project rail: its column would otherwise squeeze everything into 200px. */
+.layout.norail { grid-template-columns: minmax(0, 1fr) }
 .rail h3 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); margin: 4px 0 8px; font-weight: 600 }
 .rail ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px }
 .rail button { width: 100%; display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 6px 8px; border-radius: 6px; color: var(--muted); text-align: left }
@@ -75,6 +77,7 @@ main { min-width: 0; display: flex; flex-direction: column; gap: 20px }
 .node { cursor: pointer }
 .node.drag { cursor: grab }
 .node rect.box { fill: var(--surface); stroke: var(--line) }
+.node.par rect.box { stroke: color-mix(in srgb, var(--p2) 55%, var(--line)) }
 .node.sel rect.box { stroke: var(--accent); stroke-width: 1.5 }
 .node.drop rect.box { stroke: var(--accent); stroke-dasharray: 4 3 }
 .node:hover rect.box { stroke: var(--muted) }
@@ -278,7 +281,7 @@ th.r, td.r { text-align: right }
   }
 
   // ---- live ---------------------------------------------------------------------------------
-  var W = 168, H = 52, GX = 40, GY = 14, PAD = 16;
+  var W = 210, H = 46; // NODE.w and NODE.h in hooks/graph.ts
   var MARK = { done: '✓', running: '▶', pending: '○', skipped: '–' };
   function renderLive() {
     var s = live && live.session;
@@ -291,7 +294,7 @@ th.r, td.r { text-align: right }
   function byId(plan, id) { return plan.steps.find(function (x) { return x.id === id }) }
 
   function renderPlan() {
-    var plan = live && live.plan;
+    var plan = live && live.graph ? live.plan : null;
     $('plan-empty').hidden = !!plan; $('plan-body').hidden = !plan; $('plan-progress').hidden = !plan;
     if (!plan) { $('plan-title').textContent = 'Plan'; return }
     $('plan-title').textContent = plan.title;
@@ -299,41 +302,30 @@ th.r, td.r { text-align: right }
     $('plan-bar').style.width = (plan.progress.done / Math.max(1, plan.progress.total) * 100) + '%';
     if (!byId(plan, state.sel)) { var cur = plan.steps.find(function (x) { return x.status === 'running' }) || plan.steps.find(function (x) { return x.status === 'pending' }) || plan.steps[0]; state.sel = cur && cur.id }
 
-    var tops = plan.steps.filter(function (x) { return !x.parent });
-    var pos = {}, deepest = 0;
-    tops.forEach(function (t, i) {
-      var x = PAD + i * (W + GX); pos[t.id] = { x: x, y: PAD };
-      var micro = plan.steps.filter(function (m) { return m.parent === t.id });
-      micro.forEach(function (m, k) { pos[m.id] = { x: x + 22, y: PAD + (k + 1) * (H + GY) } });
-      deepest = Math.max(deepest, micro.length);
-    });
-    var width = PAD * 2 + tops.length * W + Math.max(0, tops.length - 1) * GX + 22, height = PAD * 2 + H + deepest * (H + GY);
-    var svg = sv('svg', { width: width, height: height, viewBox: '0 0 ' + width + ' ' + height, role: 'img', 'aria-label': 'Plan graph' });
-    tops.forEach(function (t, i) {
-      var next = tops[i + 1]; if (!next) return;
-      var a = pos[t.id], y = a.y + H / 2;
-      svg.appendChild(sv('path', { class: 'edge' + (t.status === 'done' ? ' on' : ''), d: 'M' + (a.x + W) + ' ' + y + 'H' + pos[next.id].x }));
-      if (!t.can.add) return;
+    // The plugin lays the graph out (top to bottom, parallel steps side by side); the page only draws it.
+    var graph = live.graph, pos = {};
+    graph.boxes.forEach(function (b) { pos[b.id] = b });
+    var svg = sv('svg', { width: graph.width, height: graph.height, viewBox: '0 0 ' + graph.width + ' ' + graph.height, role: 'img', 'aria-label': 'Plan graph' });
+    graph.edges.forEach(function (e) { svg.appendChild(sv('path', { class: 'edge' + (e.done ? ' on' : ''), d: e.d })) });
+    graph.plus.forEach(function (p) {
+      var t = byId(plan, p.id); if (!t || !t.can.add) return;
       var g = sv('g', { class: 'plus', tabindex: '0', role: 'button', 'aria-label': 'Add a micro-step to step ' + t.id });
-      var cx = a.x + W + GX / 2;
-      g.appendChild(sv('circle', { cx: cx, cy: y, r: 9 }));
-      var tx = sv('text', { x: cx, y: y + 4.5, 'text-anchor': 'middle' }); tx.textContent = '+'; g.appendChild(tx);
+      g.appendChild(sv('circle', { cx: p.x, cy: p.y, r: 8 }));
+      var tx = sv('text', { x: p.x, y: p.y + 4.5, 'text-anchor': 'middle' }); tx.textContent = '+'; g.appendChild(tx);
+      var tt = sv('title'); tt.textContent = 'Add a micro-step to step ' + t.id; g.appendChild(tt);
       var go = function () { state.sel = t.id; state.adding = t.id; renderPlan(); var i = $('new-step'); if (i) i.focus() };
       g.addEventListener('click', go); g.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go() });
       svg.appendChild(g);
     });
-    plan.steps.forEach(function (m) {
-      if (!m.parent) return; var p = pos[m.parent], b = pos[m.id];
-      svg.appendChild(sv('path', { class: 'edge', d: 'M' + (p.x + 11) + ' ' + (p.y + H) + 'V' + (b.y + H / 2) + 'H' + b.x }));
-    });
     plan.steps.forEach(function (st) {
-      var p = pos[st.id], movable = st.can.up || st.can.down;
-      var g = sv('g', { class: 'node ' + st.status + (state.sel === st.id ? ' sel' : '') + (movable ? ' drag' : ''), tabindex: '0', role: 'button', 'data-id': st.id, 'aria-label': 'Step ' + st.id + ': ' + st.text });
+      var p = pos[st.id]; if (!p) return;
+      var movable = st.can.up || st.can.down;
+      var g = sv('g', { class: 'node ' + st.status + (st.group ? ' par' : '') + (state.sel === st.id ? ' sel' : '') + (movable ? ' drag' : ''), tabindex: '0', role: 'button', 'data-id': st.id, 'aria-label': 'Step ' + st.id + ': ' + st.text });
       g.appendChild(sv('rect', { class: 'box', x: p.x, y: p.y, width: W, height: H, rx: 8 }));
-      g.appendChild(sv('rect', { x: p.x, y: p.y + 10, width: 3, height: H - 20, rx: 1.5, fill: css(st.status === 'done' ? '--done' : st.status === 'running' ? '--run' : '--faint') }));
-      var t1 = sv('text', { class: 't', x: p.x + 13, y: p.y + 22 }); t1.textContent = MARK[st.status] + ' ' + st.id + '  ' + (st.text.length > 17 ? st.text.slice(0, 16) + '…' : st.text);
-      var sub = st.status === 'running' ? 'running' + (st.startedAt ? ' · ' + ago(Date.now() - st.startedAt) : '') : st.status === 'done' ? 'done' + (st.startedAt && st.endedAt ? ' · ' + ago(st.endedAt - st.startedAt) : '') : st.status === 'skipped' ? 'skipped' : st.byUser ? 'added by you' : st.editedByUser ? 'edited by you' : 'pending';
-      var t2 = sv('text', { class: 's', x: p.x + 13, y: p.y + 39 }); t2.textContent = sub;
+      g.appendChild(sv('rect', { x: p.x, y: p.y + 9, width: 3, height: H - 18, rx: 1.5, fill: css(st.status === 'done' ? '--done' : st.status === 'running' ? '--run' : '--faint') }));
+      var t1 = sv('text', { class: 't', x: p.x + 13, y: p.y + 19 }); t1.textContent = MARK[st.status] + ' ' + st.id + '  ' + (st.text.length > 26 ? st.text.slice(0, 25) + '…' : st.text);
+      var state2 = st.status === 'running' ? 'running' + (st.startedAt ? ' · ' + ago(Date.now() - st.startedAt) : '') : st.status === 'done' ? 'done' + (st.startedAt && st.endedAt ? ' · ' + ago(st.endedAt - st.startedAt) : '') : st.status === 'skipped' ? 'skipped' : st.byUser ? 'added by you' : st.editedByUser ? 'edited by you' : 'pending';
+      var t2 = sv('text', { class: 's', x: p.x + 13, y: p.y + 36 }); t2.textContent = (st.group ? 'parallel · ' : '') + state2;
       var tt = sv('title'); tt.textContent = st.id + ' ' + st.text;
       g.appendChild(tt); g.appendChild(t1); g.appendChild(t2);
       g.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { state.sel = st.id; state.adding = null; renderPlan() } });
@@ -378,7 +370,8 @@ th.r, td.r { text-align: right }
     if (live.refused) box.appendChild(el('p', { class: 'refused' }, esc(live.refused)));
     if (!st) { box.appendChild(el('p', { class: 'hint' }, 'Select a step.')); return }
     var top = st.parent ? byId(plan, st.parent) : st;
-    box.appendChild(el('div', { class: 'label' }, 'Step ' + esc(st.id) + ' · ' + st.status + (st.byUser ? ' · added by you' : '')));
+    var others = st.group ? plan.steps.filter(function (x) { return x.group === st.group && x !== st }).map(function (x) { return x.id }) : [];
+    box.appendChild(el('div', { class: 'label' }, 'Step ' + esc(st.id) + ' · ' + st.status + (others.length ? ' · parallel with ' + esc(others.join(', ')) : '') + (st.byUser ? ' · added by you' : '')));
     var text = el('input', { id: 'step-text', 'aria-label': 'Step text' }); text.value = st.text; text.disabled = !st.can.edit;
     text.addEventListener('keydown', function (e) { if (e.key === 'Enter' && text.value.trim() && text.value.trim() !== st.text) postEdit({ op: 'edit', id: st.id, text: text.value }, 'Renamed ' + st.id + '.') });
     box.appendChild(text);
@@ -593,6 +586,7 @@ th.r, td.r { text-align: right }
     state.view = view; store.set('view', view);
     document.querySelectorAll('.tabs button').forEach(function (x) { x.setAttribute('aria-selected', String(x.dataset.view === view)) });
     $('view-live').hidden = view !== 'live'; $('view-stats').hidden = view !== 'stats'; $('range').hidden = view !== 'stats'; $('rail').hidden = view !== 'stats';
+    document.querySelector('.layout').classList.toggle('norail', view !== 'stats');
     if (view === 'stats') fetchStats();
   }
   document.querySelectorAll('.tabs button').forEach(function (b) { b.onclick = function () { show(b.dataset.view) } });
