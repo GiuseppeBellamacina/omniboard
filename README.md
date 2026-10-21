@@ -39,6 +39,14 @@ The steps, the subagents and the background tasks are in the board.
 
 A local page with two tabs, in a light and a dark theme (it follows your system; the button in the top bar switches it).
 
+![The Live tab: the plan as an outline, a parallel block of three steps, and step 4 open for editing in place; beside it, the subagents and the background task running now](docs/board-live.webp)
+
+![The same Live tab in the dark theme](docs/board-live-dark.webp)
+
+![The Stats tab: sessions, agent time, cost and tokens with sparklines, agent time per day stacked by project, the 12-week activity map and the sessions table](docs/board-stats.webp)
+
+*The screenshots use made-up sample data.*
+
 - **Live**: the plan as an outline. Click a step and it opens in place: rename it (Enter saves, Esc closes), add a micro-step, skip, restore, remove a step you added, move it (or Alt+↑ / Alt+↓, or drag its handle). A refused edit says why under the step it touched. Parallel steps sit in one block, and the one you open is edited at full width under it; finished steps carry a lock. **Graph** in the top bar shows the same plan as a graph, top to bottom, with the editor under it. Beside the plan, only while there is something to show: the subagents and the background tasks running right now, and what you sent to Claude (*Waiting* until Claude reads it, then *Read*). It follows plans: while one has open steps it refreshes every second and a half (while the tab is visible); with none it rests, checks every 10 seconds for the next plan, and lets the board's server stop after 30 idle minutes.
 - **Stats**: sessions, agent time, cost and tokens with sparklines and the change against the previous period; a chart per day stacked by project (Agent time / Cost / Tokens, 7d / 30d / 90d / All); every session in a searchable table; a 12-week activity map, active days, streak, busiest day, longest session and averages. The project list on the left filters everything.
 

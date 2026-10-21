@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Omniboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'><style>.a{fill:%23141413}.c{fill:none;stroke:%238A8780;stroke-width:1.6}@media (prefers-color-scheme:dark){.a{fill:%23F5F4EE}.c{stroke:%23A3A096}}</style><rect class='a' x='1' y='1' width='7' height='7' rx='1.5'/><rect x='10' y='1' width='7' height='7' rx='1.5' fill='%23D97757'/><rect class='c' x='1.8' y='10.8' width='5.4' height='5.4' rx='1.2'/><rect class='c' x='10.8' y='10.8' width='5.4' height='5.4' rx='1.2'/></svg>">
 <style>
 /* Warm paper, one ink, clay only for what is running. Serif for titles, the system face for everything you act on. */
 :root {
@@ -877,7 +878,8 @@ th.r, td.r { text-align: right }
     var max = Math.max.apply(null, Object.keys(per).map(function (k) { return per[k] }).concat([1]));
     var R = 10, w = Math.sqrt(3) * R, cols = 12, HW = 34 + cols * w + w / 2 + 4, HH = 7 * R * 1.5 + R + 4;
     var svg = sv('svg', { viewBox: '0 0 ' + HW + ' ' + HH, width: '100%', role: 'img', 'aria-label': 'Agent time per day over the last 12 weeks' });
-    ['Mon', 'Wed', 'Fri'].forEach(function (d, i) { var t = sv('text', { class: 'axis', x: 0, y: R + 6 + i * 2 * R * 1.5 }); t.textContent = d; svg.appendChild(t) });
+    // The map scales with its card, the labels with it: drawn smaller so they land near the other text's size.
+    ['Mon', 'Wed', 'Fri'].forEach(function (d, i) { var t = sv('text', { class: 'axis', x: 0, y: R + 4 + i * 2 * R * 1.5, style: 'font-size:7px' }); t.textContent = d; svg.appendChild(t) });
     var start = -83 - ((new Date(TODAY).getDay() + 6) % 7);
     for (var c = 0; c < cols; c++) for (var r = 0; r < 7; r++) {
       var day = start + c * 7 + r; if (day > 0) continue;
