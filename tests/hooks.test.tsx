@@ -128,12 +128,37 @@ test('the band steps aside while a slash command is typed, so the command list s
 
   await typing('', '/re')
   let ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
-  expect(await ui.find({ type: 'Text', text: /omniboard/ })).toBeUndefined()
+  expect(await ui.find({ key: 'board' })).toBeUndefined()
   await ui.unmount()
 
   await edit({ origin: { kind: 'composer' }, text: '/re', cursor: 3, start: 0, end: 3, inputText: 'hello' })
   ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
-  expect(await ui.find({ type: 'Text', text: /omniboard/ })).toBeDefined()
+  expect(await ui.find({ key: 'board' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the band shows only while there is something to follow', async ($, on) => {
+  engine(on)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  const idle = { ...BAND, surface: 'vscode' as const, props: { ...BAND.props, isWorking: false } }
+
+  let ui = await $.ui.mount(idle)
+  expect(await ui.find({ key: 'board' })).toBeUndefined()
+  await ui.unmount()
+
+  await plan($, { action: 'set', title: 'P', steps: ['a', 'b'] })
+  ui = await $.ui.mount(idle)
+  expect(await ui.find({ key: 'board' })).toBeDefined()
+  await ui.unmount()
+
+  await plan($, { action: 'done', id: '1' })
+  await plan($, { action: 'done', id: '2' })
+  ui = await $.ui.mount(idle)
+  expect(await ui.find({ key: 'board' })).toBeUndefined()
   await ui.unmount()
 })
 

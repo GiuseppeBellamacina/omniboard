@@ -418,7 +418,6 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, composingA))) return next(e)
-    const below = await next(e).catch(() => undefined)
     const plan = await read($, planA)
     const agents = await read($, agentsA)
     const tasks = await read($, tasksA)
@@ -431,6 +430,11 @@ export const register: Register = on => {
 
     const runningAgents = agents.filter(a => a.status === 'running')
     const runningTasks = tasks.filter(t => t.status === 'running')
+    const unfinished = plan?.steps.some(s => s.status === 'pending' || s.status === 'running')
+    // Shown only while there is something to follow: Claude Code draws its "From the plugin" label above any band,
+    // its own menus included, so an idle band would sit over them. The statistics stay one /board away.
+    if (!e.props.isWorking && !unfinished && runningAgents.length === 0 && runningTasks.length === 0) return next(e)
+    const below = await next(e).catch(() => undefined)
     const p = plan && progress(plan)
     const current = plan?.steps.find(s => s.status === 'running') ?? plan?.steps.find(s => s.status === 'pending')
     const toggle = async () => {
@@ -441,17 +445,23 @@ export const register: Register = on => {
     const openPlan = () => $.ui.open({ id: PANE, title: 'Plan', focus: true })
     const stats = session ? `${money(session.cost)} · ${elapsed(session.agentMs)} · ${tokens(session.tokens)} tok` : 'no turn yet'
 
-    const header = (
+    // One row: the summary, then the buttons. Claude Code already names the plugin above it.
+    const summary = (
       <Box flexDirection="row" alignItems="center" gap={1}>
-        <Text dimColor>── omniboard</Text>
-        <Box flexGrow={1} />
+        <Box flexGrow={1}>
+          <Text wrap="truncate-end">
+            {plan && p ? `▣ ${p.done}/${p.total} ${current?.text ?? plan.title}   │   ` : ''}
+            {runningAgents.length || runningTasks.length ? `● ${runningAgents.length} agent${runningAgents.length === 1 ? '' : 's'} · ⧗ ${runningTasks.length} bg   │   ` : ''}
+            {stats}
+          </Text>
+        </Box>
         <Button key="board" plain label="Board" onPress={() => openBoard($)} />
         {plan && <Button key="plan" plain label="Plan" onPress={openPlan} />}
         <Button key="toggle" plain label={expanded ? '▴' : '▾'} onPress={toggle} />
       </Box>
     )
 
-    const rows = expanded ? (
+    const details = expanded && (
       <Box flexDirection="column">
         {plan && p && (
           <Box flexDirection="column">
@@ -496,23 +506,18 @@ export const register: Register = on => {
             <Text dimColor>{elapsed(now - t.startedAt)}</Text>
           </Box>
         ))}
-        <Text dimColor wrap="truncate-end">
-          Session {stats}
-          {session ? ` · last ${money(session.lastCost)} · ${session.turns} turns` : ''}
-        </Text>
+        {session && (
+          <Text dimColor wrap="truncate-end">
+            Session · last turn {money(session.lastCost)} · {session.turns} turns
+          </Text>
+        )}
       </Box>
-    ) : (
-      <Text wrap="truncate-end">
-        {plan && p ? `▣ ${p.done}/${p.total} ${current?.text ?? plan.title}   │   ` : ''}
-        {runningAgents.length || runningTasks.length ? `● ${runningAgents.length} agent${runningAgents.length === 1 ? '' : 's'} · ⧗ ${runningTasks.length} bg   │   ` : ''}
-        {stats}
-      </Text>
     )
 
     const mine = (
       <Box flexDirection="column" width={width}>
-        {header}
-        {rows}
+        {summary}
+        {details}
       </Box>
     )
     return below ? (

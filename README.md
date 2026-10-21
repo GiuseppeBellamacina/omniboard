@@ -27,11 +27,10 @@ Requires a Claude Code build with plugin function hooks (mods) and [Node.js](htt
 
 ### A band above the prompt
 
-One row, always there: the plan's progress and current step, what runs in the background, and the session's cost, agent time and tokens. **▾** expands it (the choice is remembered), **Board** opens the browser board, **Plan** the checklist.
+One row, while there is something to follow (Claude working, a plan with open steps, agents or tasks in the background): the plan's progress and current step, what runs in the background, and the session's cost, agent time and tokens. **▾** expands it (the choice is remembered), **Board** opens the browser board, **Plan** the checklist. When everything is idle it steps away, and it also steps aside while you type a slash command.
 
 ```text
-── omniboard ───────────────────────────────────────────────── Board  Plan  ▾
-▣ 3/7 Migrare le route   │   ● 2 agents · ⧗ 1 bg   │   $4.21 · 12m04s · 1.2M tok
+▣ 3/7 Migrare le route  │  ● 2 agents · ⧗ 1 bg  │  $4.21 · 12m04s · 1.2M tok     Board  Plan  ▾
 ```
 
 Expanded, it lists the plan's steps, the running and latest subagents (type, task, time, tokens, the tool they are using) and the background tasks.
