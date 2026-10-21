@@ -27,7 +27,7 @@ Requires a Claude Code build with plugin function hooks (mods) and [Node.js](htt
 
 ### A band above the prompt
 
-One row, while there is something to follow (Claude working, a plan with open steps, agents or tasks in the background): the plan's progress and current step, what runs in the background, and the session's cost, agent time and tokens. **▾** expands it (the choice is remembered), **Board** opens the browser board, **Plan** the checklist. When everything is idle it steps away, and it also steps aside while you type a slash command.
+One row, while a plan has open steps (one you approved, or steps Claude set for a longer task): the plan's progress and current step, the subagents and background tasks running meanwhile, and the session's cost, agent time and tokens. **▾** expands it (the choice is remembered), **Board** opens the browser board, **Plan** the checklist. With no plan running it does not show, and it steps aside while you type a slash command.
 
 ```text
 ▣ 3/7 Migrare le route  │  ● 2 agents · ⧗ 1 bg  │  $4.21 · 12m04s · 1.2M tok     Board  Plan  ▾
@@ -46,7 +46,7 @@ A pane inside Claude Code: the plan as a graph read top to bottom (drawn as SVG 
 
 A local page with two tabs.
 
-- **Live**: the plan graph, top to bottom with parallel steps side by side (click a step to edit it, **+** under a step to add a micro-step to it, drag a pending step onto another to reorder), the subagents as a tree, and the background tasks. It refreshes every second and a half while the tab is visible.
+- **Live**: the plan graph, top to bottom with parallel steps side by side (click a step to edit it, **+** under a step to add a micro-step to it, drag a pending step onto another to reorder), the subagents as a tree, and the background tasks. It follows plans: while one has open steps it refreshes every second and a half (while the tab is visible); with none it rests, checks every 10 seconds for the next plan, and lets the board's server stop after 30 idle minutes.
 - **Stats**: sessions, agent time, cost and tokens with sparklines and the change against the previous period; a chart per day stacked by project (Agent time / Cost / Tokens, 7d / 30d / 90d / All); every session in a searchable table; a 12-week activity map, active days, streak, busiest day, longest session and averages. The project list on the left filters everything.
 
 ### `/board-import`

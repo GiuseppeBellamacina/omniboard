@@ -435,9 +435,9 @@ export const register: Register = on => {
     const runningAgents = agents.filter(a => a.status === 'running')
     const runningTasks = tasks.filter(t => t.status === 'running')
     const unfinished = plan?.steps.some(s => s.status === 'pending' || s.status === 'running')
-    // Shown only while there is something to follow: Claude Code draws its "From the plugin" label above any band,
-    // its own menus included, so an idle band would sit over them. The statistics stay one /board away.
-    if (!e.props.isWorking && !unfinished && runningAgents.length === 0 && runningTasks.length === 0) return next(e)
+    // Shown only while a plan has open steps (Claude Code also draws its "From the plugin" label above any band,
+    // its own menus included). Agents and background tasks show in it while that plan runs.
+    if (!unfinished) return next(e)
     const below = await next(e).catch(() => undefined)
     const p = plan && progress(plan)
     const current = plan?.steps.find(s => s.status === 'running') ?? plan?.steps.find(s => s.status === 'pending')

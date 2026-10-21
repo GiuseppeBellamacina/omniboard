@@ -193,13 +193,13 @@ th.r, td.r { text-align: right }
           <h2 id="plan-title">Plan</h2>
           <div class="progress right" id="plan-progress" hidden><span id="plan-count" class="num"></span><div class="bar"><i id="plan-bar"></i></div></div>
         </div>
-        <p class="empty" id="plan-empty">No plan running. When Claude starts a plan or a task of several steps, it shows up here and you can edit it while Claude works.</p>
+        <p class="empty" id="plan-empty">No plan running. When Claude starts a plan or a task of several steps, it shows up here, with its subagents and background tasks, and you can edit it while Claude works.</p>
         <div class="plan-wrap" id="plan-body" hidden>
           <div class="graph-scroll" id="graph"></div>
           <div class="inspector" id="inspector"></div>
         </div>
       </div>
-      <div class="two">
+      <div class="two" id="runs">
         <div class="panel">
           <div class="panel-head"><h2>Agents</h2><span class="sub" id="agents-sub"></span></div>
           <div class="rows" id="agents"></div>
@@ -264,12 +264,18 @@ th.r, td.r { text-align: right }
 
   // ---- server -------------------------------------------------------------------------------
   function conn(ok, text) { $('conn').textContent = text; $('conn').classList.toggle('off', !ok) }
+  // The live view follows a plan: with one open it polls every 1.5 s; without, every 10 s and without keeping
+  // the server awake, which then stops on its own after 30 idle minutes.
+  function active() { return !!(live && live.plan && live.plan.steps.some(function (s) { return s.status === 'pending' || s.status === 'running' })) }
   function fetchLive() {
-    return fetch('api/live', { cache: 'no-store' }).then(function (r) { return r.json() }).then(function (data) {
-      live = data; conn(true, live.at ? 'updated ' + new Date(live.at).toLocaleTimeString() : 'connected'); renderLive();
-    }).catch(function () { conn(false, 'Claude Code is not reachable: the board closes with its session') });
+    var idle = !active();
+    return fetch('api/live' + (idle ? '?idle=1' : ''), { cache: 'no-store' }).then(function (r) { return r.json() }).then(function (data) {
+      live = data;
+      conn(true, active() ? 'updated ' + new Date(live.at).toLocaleTimeString() : 'idle · waiting for a plan');
+      renderLive();
+    }).catch(function () { conn(false, 'The board has stopped: run /board in Claude Code to open it again') });
   }
-  (function poll() { var go = document.visibilityState === 'visible' ? fetchLive() : Promise.resolve(); go.then(function () { setTimeout(poll, 1500) }) })();
+  (function poll() { var go = document.visibilityState === 'visible' ? fetchLive() : Promise.resolve(); go.then(function () { setTimeout(poll, active() ? 1500 : 10000) }) })();
   function fetchStats() {
     return fetch('api/stats', { cache: 'no-store' }).then(function (r) { return r.json() }).then(function (list) { sessions = list.map(toSession).filter(Boolean); rail(); renderStats() }).catch(function () {});
   }
@@ -285,8 +291,9 @@ th.r, td.r { text-align: right }
   var MARK = { done: '✓', running: '▶', pending: '○', skipped: '–' };
   function renderLive() {
     var s = live && live.session;
-    $('live-dot').classList.toggle('on', !!live && !!live.at);
-    $('session').innerHTML = s ? '<span>Session <b>' + esc(s.title || s.project) + '</b></span><span>Cost <b>' + fmtCost(s.cost) + '</b> (last ' + fmtCost(s.lastCost) + ')</span><span>Agent time <b>' + ago(s.agentMs) + '</b></span><span>Tokens <b>' + fmtTok(s.tokens) + '</b></span><span>Turns <b>' + s.turns + '</b></span>' : '';
+    $('live-dot').classList.toggle('on', active());
+    $('runs').hidden = !active();
+    $('session').innerHTML = s ?'<span>Session <b>' + esc(s.title || s.project) + '</b></span><span>Cost <b>' + fmtCost(s.cost) + '</b> (last ' + fmtCost(s.lastCost) + ')</span><span>Agent time <b>' + ago(s.agentMs) + '</b></span><span>Tokens <b>' + fmtTok(s.tokens) + '</b></span><span>Turns <b>' + s.turns + '</b></span>' : '';
     renderPlan(); renderRuns();
   }
 

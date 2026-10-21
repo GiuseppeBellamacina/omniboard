@@ -60,7 +60,8 @@ function start({ dir, page, log = line => process.stdout.write(line + '\n'), idl
     const prefix = `/${token}/`
     if (!url.pathname.startsWith(prefix)) return send(404, '{"error":"not found"}')
     const route = url.pathname.slice(prefix.length)
-    touch()
+    // A page with no plan to follow polls with ?idle=1: those polls do not keep the server awake.
+    if (url.searchParams.get('idle') !== '1') touch()
     try {
       if (req.method === 'GET' && route === '') {
         res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")

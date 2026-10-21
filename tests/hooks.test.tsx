@@ -92,6 +92,7 @@ test('a command moved to the background by PowerShell shows in the band', async 
   on('tool.call', { tool: 'PowerShell' } as never, () => ({ result: { stdout: '', backgroundTaskId: 'b304' } }))
   engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await plan($, { action: 'set', title: 'P', steps: ['a', 'b'] })
   await $.tool.call({ tool: 'PowerShell', command: 'node ticker.js', run_in_background: true } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await ui.press({ key: 'toggle' })
@@ -122,6 +123,7 @@ test('the band steps aside while a slash command is typed, so the command list s
     return <Text>engine</Text>
   })
   await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  await plan($, { action: 'set', title: 'P', steps: ['a', 'b'] })
   // The kit raises prompt.edit at run time; its Engine type does not list it.
   const edit = ($.prompt as unknown as { edit: (e: unknown) => Promise<unknown> }).edit
   const typing = (text: string, inputText: string) => edit({ origin: { kind: 'composer' }, text, cursor: text.length, start: text.length, end: text.length, inputText })
@@ -137,7 +139,7 @@ test('the band steps aside while a slash command is typed, so the command list s
   await ui.unmount()
 })
 
-test('the band shows only while there is something to follow', async ($, on) => {
+test('the band shows only while a plan has open steps, not for work or agents alone', async ($, on) => {
   engine(on)
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -147,6 +149,12 @@ test('the band shows only while there is something to follow', async ($, on) => 
   const idle = { ...BAND, surface: 'vscode' as const, props: { ...BAND.props, isWorking: false } }
 
   let ui = await $.ui.mount(idle)
+  expect(await ui.find({ key: 'board' })).toBeUndefined()
+  await ui.unmount()
+
+  // Claude working, with a subagent running, but no plan: no band.
+  await $.agent.spawn({ tool_use_id: 'tu1', prompt: 'look', description: 'Look around', subagentType: 'Explore', parentModel: 'opus', background: false, fork: false } as never)
+  ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
   expect(await ui.find({ key: 'board' })).toBeUndefined()
   await ui.unmount()
 
@@ -165,6 +173,7 @@ test('the band shows only while there is something to follow', async ($, on) => 
 test('subagents and the session totals show in the expanded band', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await plan($, { action: 'set', title: 'P', steps: ['a', 'b'] })
   await $.agent.spawn({ tool_use_id: 'tu1', prompt: 'look', description: 'Mappa le route', subagentType: 'Explore', parentModel: 'opus', background: false, fork: false } as never)
   await $.turn.complete({ answer: 'ok', durationMs: 90_000, isAborted: false, turnId: 't1', reason: 'answer', usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'opus' } })
 
