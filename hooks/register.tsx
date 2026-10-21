@@ -226,7 +226,9 @@ async function serve($: EngineInterface) {
 
 async function openBoard($: EngineInterface) {
   const url = await read($, boardA)
-  if (url) return openUrl($, url)
+  // The address outlives the server when the module reloads: reuse it only if the server still answers.
+  if (url && (await $.http.fetch(`${url}api/live`).then(r => r.ok, () => false))) return openUrl($, url)
+  await update($, boardA, () => null)
   void serve($).catch(() => $.ui.toast('omniboard: the board server could not start (is Node.js installed?).'))
 }
 
@@ -248,6 +250,8 @@ export const register: Register = on => {
     await $.command.register({ name: 'board-import', description: 'Add past Claude Code sessions to the omniboard statistics' })
     const expanded = await $.store.get('expanded')
     await update($, expandedA, () => expanded === true)
+    // A (re)load starts with no server: the one an earlier load ran died with it.
+    await update($, boardA, () => null)
     return next(e)
   })
 
