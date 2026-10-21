@@ -501,7 +501,12 @@ th.r, td.r { text-align: right }
       var st = state.sel && byId(plan, state.sel);
       $('graph-editor').innerHTML = refusalAt(plan, undefined, true) + (st ? '<ul class="list solo">' + editor(plan, st) + '</ul>' : '<p class="hint">Select a step to change it. Drag a pending step to reorder it.</p>');
     } else $('outline').innerHTML = outline(plan);
-    if (state.focus) { var i = $(state.focus); state.focus = null; if (i) { i.focus(); if (i.id === 'ed-text') i.setSelectionRange(i.value.length, i.value.length) } }
+    if (state.focus) {
+      // A step that cannot be renamed has no field: its Close button takes the focus instead.
+      var i = $(state.focus) || document.querySelector('.editor [data-act="close"]'); state.focus = null;
+      if (i) { i.focus(); if (i.id === 'ed-text') i.setSelectionRange(i.value.length, i.value.length) }
+    }
+    if (state.back) { var r = document.querySelector('[data-act="pick"][data-id="' + CSS.escape(state.back) + '"]'); state.back = null; if (r) r.focus() }
   }
 
   function head(plan) {
@@ -616,6 +621,15 @@ th.r, td.r { text-align: right }
     }
     renderPlan(true);
   });
+  // Esc closes the open step wherever the focus is (a finished step's editor has no field to hold it):
+  // from the micro-step field it only drops that field. Focus goes back to the step's row.
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape' || state.view !== 'live' || !state.sel) return;
+    ev.preventDefault();
+    if (ev.target.id === 'ed-new') { state.adding = null; state.focus = 'ed-text' }
+    else { state.back = state.sel; close() }
+    renderPlan(true);
+  });
   $('view-live').addEventListener('input', function (ev) { if (ev.target.id === 'ed-text') state.draft = { id: ev.target.getAttribute('data-id'), text: ev.target.value } });
   $('view-live').addEventListener('keydown', function (ev) {
     var t = ev.target, plan = live && live.plan; if (!plan) return;
@@ -624,7 +638,6 @@ th.r, td.r { text-align: right }
       ev.preventDefault(); var v = t.value.trim(), id = t.getAttribute('data-id'); if (!v) return;
       state.adding = null; t.blur(); postEdit({ op: 'add', after: id, text: v }, 'Added a micro-step after ' + id + '.'); renderPlan(true); return;
     }
-    if (ev.key === 'Escape' && t.closest && t.closest('.editor')) { if (t.id === 'ed-new') state.adding = null; else close(); renderPlan(true); return }
     if (ev.altKey && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') && state.sel && t.closest && t.closest('.editor')) { ev.preventDefault(); move(plan, byId(plan, state.sel), ev.key === 'ArrowUp' ? -1 : 1) }
   });
 
