@@ -46,9 +46,9 @@ A pane inside Claude Code: the plan as a graph read top to bottom (drawn as SVG 
 
 ### `/board`: the browser board
 
-A local page with two tabs.
+A local page with two tabs, in a light and a dark theme (it follows your system; the button in the top bar switches it).
 
-- **Live**: the plan graph, top to bottom with parallel steps side by side (click a step to edit it, **+** under a step to add a micro-step to it, drag a pending step onto another to reorder), the subagents as a tree, and the background tasks. It follows plans: while one has open steps it refreshes every second and a half (while the tab is visible); with none it rests, checks every 10 seconds for the next plan, and lets the board's server stop after 30 idle minutes.
+- **Live**: the plan as an outline. Click a step and it opens in place: rename it (Enter saves, Esc closes), add a micro-step, skip, restore, remove a step you added, move it (or Alt+↑ / Alt+↓, or drag its handle). A refused edit says why under the step it touched. Parallel steps sit in one block; finished steps carry a lock. **Graph** in the top bar shows the same plan as a graph, top to bottom, with the editor under it. Beside the plan: the subagents as a tree, the background tasks, what you sent to Claude (*Waiting* until Claude reads it, then *Read*), and the session's totals. It follows plans: while one has open steps it refreshes every second and a half (while the tab is visible); with none it rests, checks every 10 seconds for the next plan, and lets the board's server stop after 30 idle minutes.
 - **Stats**: sessions, agent time, cost and tokens with sparklines and the change against the previous period; a chart per day stacked by project (Agent time / Cost / Tokens, 7d / 30d / 90d / All); every session in a searchable table; a 12-week activity map, active days, streak, busiest day, longest session and averages. The project list on the left filters everything.
 
 ### `/board-import`

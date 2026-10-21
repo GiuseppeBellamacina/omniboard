@@ -63,6 +63,7 @@ async function takeNotes($: EngineInterface): Promise<string | undefined> {
   const notes = await read($, notesA)
   if (notes.length === 0) return undefined
   await update($, notesA, () => [])
+  scheduleLive($)
   return noteFor(notes, await read($, planA))
 }
 
@@ -184,6 +185,8 @@ async function writeLive($: EngineInterface) {
     tasks: await read($, tasksA),
     session: await read($, sessionA),
     refused: await read($, refusedA),
+    // Edits the person made that Claude has not read yet.
+    pending: (await read($, notesA)).length,
   }
   await $.fs.write(`${await dataDir($)}/live.json`, JSON.stringify(live))
 }
@@ -374,7 +377,10 @@ export const register: Register = on => {
     if (notes.length === 0) return next(e)
     // Edits made while Claude was idle ride on the next prompt that enters.
     const out = await next({ ...e, context: [...(e.context ?? []), noteFor(notes, await read($, planA))] })
-    if (!('drop' in out && out.drop)) await update($, notesA, n => n.slice(notes.length))
+    if (!('drop' in out && out.drop)) {
+      await update($, notesA, n => n.slice(notes.length))
+      scheduleLive($)
+    }
     return out
   })
 
