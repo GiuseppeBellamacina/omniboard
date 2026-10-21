@@ -75,6 +75,8 @@ declare module 'claude-code' {
       board: string | null
       /** The last edit the plan refused, shown in the pane and the board. */
       refused: string | null
+      /** The prompt box holds a slash command: the band steps aside for the command list. */
+      composing: boolean
     }
   }
 }

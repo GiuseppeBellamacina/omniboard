@@ -91,6 +91,32 @@ test('a done section shows no edit controls in the pane', async ($, on) => {
   await ui.unmount()
 })
 
+test('the band steps aside while a slash command is typed, so the command list shows', async ($, on) => {
+  engine(on)
+  on('prompt.edit', (_, e) => {
+    const text = e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end)
+    return { text, cursor: e.start + e.inputText.length }
+  })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  // The kit raises prompt.edit at run time; its Engine type does not list it.
+  const edit = ($.prompt as unknown as { edit: (e: unknown) => Promise<unknown> }).edit
+  const typing = (text: string, inputText: string) => edit({ origin: { kind: 'composer' }, text, cursor: text.length, start: text.length, end: text.length, inputText })
+
+  await typing('', '/re')
+  let ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+  expect(await ui.find({ type: 'Text', text: /omniboard/ })).toBeUndefined()
+  await ui.unmount()
+
+  await edit({ origin: { kind: 'composer' }, text: '/re', cursor: 3, start: 0, end: 3, inputText: 'hello' })
+  ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+  expect(await ui.find({ type: 'Text', text: /omniboard/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('subagents and the session totals show in the expanded band', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })

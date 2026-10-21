@@ -17,6 +17,7 @@ const editingA = atom({ plugin: 'omniboard', key: 'editing' } as const, null)
 const tickA = atom({ plugin: 'omniboard', key: 'tick' } as const, 0)
 const boardA = atom({ plugin: 'omniboard', key: 'board' } as const, null)
 const refusedA = atom({ plugin: 'omniboard', key: 'refused' } as const, null)
+const composingA = atom({ plugin: 'omniboard', key: 'composing' } as const, false)
 
 const TOOL = 'mcp__omniboard__plan'
 const PANE = 'omniboard-plan'
@@ -406,8 +407,21 @@ export const register: Register = on => {
   })
 
   // ---- band above the prompt ----------------------------------------------------------------------
+  // The command list opens where the band sits: the band steps aside while the box holds a slash command.
+  // Written only when that changes, so typing costs nothing.
+  const slash = (text: string) => text.trimStart().startsWith('/')
+  on('prompt.edit', async ($, e, next) => {
+    const out = await next(e)
+    if (slash(out.text) !== (await read($, composingA))) await update($, composingA, () => slash(out.text))
+    return out
+  })
+  on('prompt.change', async ($, e, next) => {
+    if (slash(e.text) !== (await read($, composingA))) await update($, composingA, () => slash(e.text))
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    if (e.props.hasSurvey || (await read($, composingA))) return next(e)
     const below = await next(e).catch(() => undefined)
     const plan = await read($, planA)
     const agents = await read($, agentsA)
