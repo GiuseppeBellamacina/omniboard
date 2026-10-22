@@ -11,7 +11,7 @@ import { join } from 'node:path'
 
 const IDLE_MS = 30 * 60 * 1000
 const MAX_BODY = 8 * 1024
-const OPS = new Set(['add', 'edit', 'skip', 'restore', 'remove', 'move'])
+const OPS = new Set(['add', 'edit', 'skip', 'restore', 'remove', 'move', 'stop'])
 
 /** RFC 4180 rows: quoted fields may hold commas, quotes and newlines. */
 function parseCsv(text) {
@@ -121,6 +121,7 @@ async function selfTest() {
     assert((await post('{"op":"rm -rf"}')).status === 400, 'unknown op refused')
     assert((await post('{"op":"skip","id":"2"}')).status === 202, 'edit accepted')
     assert(lines.includes('EDIT {"op":"skip","id":"2"}'), 'edit printed')
+    assert((await post('{"op":"stop"}')).status === 202, 'stop accepted')
     server.close()
     console.log('self-test ok')
   } finally {

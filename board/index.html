@@ -78,7 +78,9 @@ button { cursor: pointer }
 .side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px }
 .title { margin: 6px 0 0; font-size: 34px; line-height: 1.15; text-wrap: balance }
 .lead { max-width: 56ch; margin: 14px 0 0 }
-.meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; color: var(--muted); font-size: 13px }
+.meta-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 14px }
+.meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--muted); font-size: 13px }
+#plan-stop.armed { color: var(--clay-ink); border-color: var(--clay-edge); background: var(--clay-wash) }
 .meta-row b { color: var(--ink); font-weight: 600 }
 .meta-row .ok { display: inline-flex; align-items: center; gap: 6px; color: var(--ink) }
 .bar { display: flex; gap: 4px; margin-top: 16px; max-width: 520px }
@@ -312,7 +314,7 @@ th.r, td.r { text-align: right }
       <div id="plan-head" hidden>
         <div class="eyebrow num" id="plan-eyebrow"></div>
         <h1 class="serif title" id="plan-title"></h1>
-        <div class="meta-row num" id="plan-meta"></div>
+        <div class="meta-line"><div class="meta-row num" id="plan-meta"></div><button type="button" class="tb sm quiet" id="plan-stop" hidden>Stop plan</button></div>
         <div class="bar" id="plan-bar" role="img"></div>
         <div class="banner" id="plan-lock" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>This plan is complete: it stays as it ended.</span></div>
       </div>
@@ -521,6 +523,7 @@ th.r, td.r { text-align: right }
     $('plan-bar').innerHTML = plan.steps.map(function (s) { return '<i class="' + s.status + '"></i>' }).join('');
     $('plan-bar').setAttribute('aria-label', 'Progress: ' + count(plan, 'done') + ' done, ' + count(plan, 'running') + ' running, ' + count(plan, 'pending') + ' pending, ' + count(plan, 'skipped') + ' skipped');
     $('plan-lock').hidden = !done;
+    $('plan-stop').hidden = done;
   }
 
   // ---- outline: one row per step, the selected one opens in place as its editor ----
@@ -621,6 +624,19 @@ th.r, td.r { text-align: right }
     }
     renderPlan(true);
   });
+  // Stopping the plan skips every open step for good: the button asks for a second click instead of a dialog.
+  var stopT;
+  $('plan-stop').addEventListener('click', function () {
+    var b = $('plan-stop');
+    if (!b.classList.contains('armed')) {
+      b.classList.add('armed'); b.textContent = 'Click again to stop the plan';
+      stopT = setTimeout(function () { b.classList.remove('armed'); b.textContent = 'Stop plan' }, 4000);
+      return;
+    }
+    clearTimeout(stopT); b.classList.remove('armed'); b.textContent = 'Stop plan';
+    close(); postEdit({ op: 'stop' }, 'Stopped the plan.');
+  });
+
   // Esc closes the open step wherever the focus is (a finished step's editor has no field to hold it):
   // from the micro-step field it only drops that field. Focus goes back to the step's row.
   document.addEventListener('keydown', function (ev) {

@@ -96,6 +96,16 @@ test('a complete plan is read-only for the person', async () => {
   expect(applyEdit(plan, { op: 'restore', id: '2' })).toEqual({ error: 'The plan is complete: it can no longer change.' })
 })
 
+test('stop ends the plan where it is, the step in progress and the user\'s own included', async () => {
+  let plan = newPlan('P', ['a', 'b', 'c'], 0)
+  plan = ok(mark(plan, '1', 'done', 1))
+  plan = ok(mark(plan, '2', 'running', 1))
+  plan = ok(add(plan, '3', 'yours', true))
+  plan = ok(applyEdit(plan, { op: 'stop' }, 'claude'))
+  expect(plan.steps.map(s => s.status)).toEqual(['done', 'skipped', 'skipped', 'skipped'])
+  expect(applyEdit(plan, { op: 'stop' }, 'claude')).toEqual({ error: 'The plan is already complete.' })
+})
+
 test('skip and restore take the micro-steps along; remove drops them', async () => {
   let plan = newPlan('P', ['a', 'b'], 0)
   plan = ok(add(plan, '2', 'm', true))

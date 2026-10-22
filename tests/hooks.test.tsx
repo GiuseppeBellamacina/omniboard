@@ -18,6 +18,8 @@ function engine(on: On) {
   mock.store(on)
   mock.env(on, { USERPROFILE: 'C:/Users/test', OS: 'Windows_NT' })
   const files: Record<string, string> = {}
+  // The session's id: /resume inside the process moves it.
+  const ids = { session: '2fdd950f-1234' }
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__omniboard__${e.name}` } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
@@ -26,14 +28,14 @@ function engine(on: On) {
   on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'agent-1' }))
   on('turn.complete', () => ({ text: '' }))
   on('session.usage', () => ({ value: { startedAt: 500_000, cost: { usd: 1.25 }, context: { window: 200000 }, rateLimits: [] } }))
-  on('session.id', () => ({ value: '2fdd950f-1234' }))
+  on('session.id', () => ({ value: ids.session }))
   on('session.repo', () => ({ value: null }))
   on('session.cwd', () => ({ value: 'd:\\Codici\\Workspace' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.turns', () => ({ value: 3 }))
   on('fs.read', (_, e) => (e.path in files ? { value: files[e.path]! } : Promise.reject(new Error('missing'))))
   on('fs.write', (_, e) => ((files[e.path] = e.text), { value: undefined }))
-  return { files, clock }
+  return { files, clock, ids }
 }
 
 // What earlier sessions left in plans.json (the kit's fs keeps paths with backslashes).
@@ -87,7 +89,12 @@ test('the board gets the background tasks, and an edit made in it reaches Claude
   await clock.settle()
   await $.tool.call({ tool: 'PowerShell', command: 'node ticker.js', run_in_background: true } as never)
   await clock.advance(500)
-  expect(Object.entries(files).find(([path]) => path.endsWith('live.json'))?.[1]).toMatch(/node ticker\.js/)
+  const liveJson = () => JSON.parse(Object.entries(files).find(([path]) => path.endsWith('live.json'))![1])
+  expect(liveJson().tasks.map((t: { label: string; status: string }) => `${t.label}:${t.status}`)).toEqual(['node ticker.js:running'])
+  // Stopped by Claude: no notice comes, the stop itself closes it.
+  await $.tool.call({ tool: 'TaskStop', task_id: 'b304' } as never)
+  await clock.advance(500)
+  expect(liveJson().tasks[0].status).toBe('done')
   await clock.advance(1000)
 
   const first = await $.tool.call({ tool: 'Read', file_path: 'x.ts' })
@@ -121,13 +128,53 @@ test('a reopened session gets its plan back, and Claude reads that once', async 
   expect((await $.tool.call({ tool: 'Read', file_path: 'y.ts' })).context).toBeUndefined()
 })
 
+const restore = async ($: Engine) =>
+  ((await $.command.run({ command: 'board-restore', args: '', origin: { kind: 'composer' } } as never)) as { text?: string }).text
+
 test('/board-restore brings back the unfinished plan of this project from another session', async ($, on) => {
   const { files } = engine(on)
   files[PLANS] = leftover('older-session', 'Migrare il db')
   await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
-  const run = (await $.command.run({ command: 'board-restore', args: '', origin: { kind: 'composer' } } as never)) as { text?: string }
-  expect(run.text).toMatch(/restored "Migrare il db" \(1\/2 done\)/)
+  expect(await restore($)).toMatch(/restored "Migrare il db" \(1\/2 done\) from this project/)
   expect(String((await plan($, { action: 'get' })).result)).toMatch(/Plan: Migrare il db/)
+  // Now this session has an unfinished plan of its own: the command says so instead of "nothing found".
+  expect(await restore($)).toMatch(/already has an unfinished plan, "Migrare il db"/)
+})
+
+test('/board-restore falls back to another project when the folder changed', async ($, on) => {
+  const { files } = engine(on)
+  files[PLANS] = leftover('older-session', 'Migrare il db').replace('"Workspace"', '"omniboard"')
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  expect(await restore($)).toMatch(/restored "Migrare il db" \(1\/2 done\) from the project omniboard/)
+})
+
+test('/resume inside a running session brings that session\'s plan, or none', async ($, on) => {
+  const { files, clock, ids } = engine(on)
+  on('prompt.submit', (_, e) => e as never)
+  files[PLANS] = leftover('resumed-session', 'Rifare auth')
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  await plan($, { action: 'set', title: 'Prima', steps: ['a', 'b'] })
+  await clock.advance(500)
+  ids.session = 'resumed-session'
+  await $.prompt.submit({ origin: { kind: 'composer' }, text: 'ciao' } as never)
+  expect(String((await plan($, { action: 'get' })).result)).toMatch(/Plan: Rifare auth/)
+  // The first session's plan stayed under its own id.
+  expect(JSON.parse(files[PLANS]!)['2fdd950f-1234'].plan.title).toBe('Prima')
+})
+
+test('Claude ends the plan with "stop" when the user asks', async ($, on) => {
+  engine(on)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  await plan($, { action: 'set', title: 'P', steps: ['a', 'b'] })
+  await plan($, { action: 'start', id: '1' })
+  expect(String((await plan($, { action: 'stop' })).result)).toMatch(/\[-\] 1 a\n\[-\] 2 b/)
+  const ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+  expect(await ui.find({ key: 'board' })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('parallel steps come in as an inner list and are marked in the plan Claude reads', async ($, on) => {

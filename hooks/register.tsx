@@ -26,12 +26,13 @@ const TOOL_SPEC = {
 - first call action "set" with a short title and the steps in order. Steps that run at the same time (for example subagents you start together) go as an inner list: ["Read the code", ["Write the API", "Write the UI"], "Test"]; they get ids like "2a" and "2b";
 - call "start" with a step id before working on it and "done" right after finishing it;
 - when the work calls for it, change the plan instead of drifting from it: "insert" a new step (after a step id, or at the end with no "after"), "add" a micro-step after a step id, "edit" a step's text, "skip" or "remove" a step that has not started, "restore" a skipped one, "move" a pending step "before" another (or to the end). Finished steps are locked, and steps the user added or changed are theirs: ask them before changing those;
+- "stop" ends the whole plan where it is, every open step skipped: only when the user asks to stop or drop it;
 - the user can add, rename, skip or reorder steps while you work: a note tells you, and every result of this tool shows the current plan ("get" reads it). Follow the plan as the user left it, including the steps they added.
 Never mark a step done that you did not complete.`,
   inputSchema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['set', 'start', 'done', 'add', 'insert', 'edit', 'skip', 'restore', 'remove', 'move', 'get'] },
+      action: { type: 'string', enum: ['set', 'start', 'done', 'add', 'insert', 'edit', 'skip', 'restore', 'remove', 'move', 'stop', 'get'] },
       title: { type: 'string' },
       steps: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] } },
       id: { type: 'string', description: 'Step id, as listed in the plan (e.g. "3", "3.1", "2a").' },
@@ -98,6 +99,7 @@ async function answerTool($: EngineInterface, input: Record<string, unknown>): P
         : action === 'insert' ? { op: 'insert', after, text }
         : action === 'edit' ? { op: 'edit', id, text }
         : action === 'skip' || action === 'restore' || action === 'remove' ? { op: action, id }
+        : action === 'stop' ? { op: 'stop' }
         : action === 'move' ? { op: 'move', id, before: typeof input.before === 'string' && input.before ? input.before : null }
         : undefined
       const out = edit ? applyEdit(plan, edit, 'claude') : action === 'start' || action === 'done' ? mark(plan, id, action === 'done' ? 'done' : 'running', now) : { error: `Unknown action "${action}".` }
@@ -162,6 +164,8 @@ function scheduleLive($: EngineInterface) {
 
 type Saved = Record<string, { plan: Plan; project: string; savedAt: number }>
 let lastSaved = ''
+/** The session the plan in state belongs to: /resume inside a running process moves to another id. */
+let sessionOf = ''
 const isOpen = (plan: Plan) => plan.steps.some(s => s.status === 'pending' || s.status === 'running')
 
 async function readSaved($: EngineInterface): Promise<Saved> {
@@ -180,13 +184,36 @@ async function project($: EngineInterface) {
 async function savePlan($: EngineInterface) {
   const plan = await read($, planA)
   const json = plan ? JSON.stringify(plan) : ''
-  if (!plan || json === lastSaved) return
+  if (!plan || !sessionOf || json === lastSaved) return
   lastSaved = json
   const all = await readSaved($)
-  all[await $.session.id()] = { plan, project: await project($), savedAt: await $.clock.now() }
+  all[sessionOf] = { plan, project: await project($), savedAt: await $.clock.now() }
   // shortcut: keeps the 30 most recently changed plans, plenty to come back to any recent session; older ones go.
   const kept = Object.fromEntries(Object.entries(all).sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, 30))
   await $.fs.write(`${await dataDir($)}/plans.json`, JSON.stringify(kept))
+}
+
+/**
+ * /resume inside a running session swaps the conversation under another id with no new session.start (and the
+ * classic SessionStart hook can be skipped by another plugin): at each message, a new id brings its own plan, or none.
+ */
+async function followSession($: EngineInterface) {
+  const id = await $.session.id()
+  if (id === sessionOf) return
+  const was = sessionOf
+  sessionOf = id
+  // A /clear also moves to a new id; session.end has already emptied the state for it.
+  if (!was) return
+  await update($, notesA, () => [])
+  await update($, agentsA, () => [])
+  await update($, tasksA, () => [])
+  const saved = (await readSaved($))[id]
+  if (saved) await restorePlan($, saved.plan, 'the session was resumed, and its plan is back: go on from its first open step')
+  else {
+    await update($, planA, () => null)
+    lastSaved = ''
+  }
+  scheduleLive($)
 }
 
 /** Puts a saved plan back; Claude reads that it did with the next message or action. */
@@ -231,6 +258,7 @@ const isEdit = (v: unknown): v is Edit => {
     case 'add': return s('after') && s('text')
     case 'edit': return s('id') && s('text')
     case 'skip': case 'restore': case 'remove': return s('id')
+    case 'stop': return true
     case 'move': return s('id') && (e.before === null || s('before'))
     default: return false
   }
@@ -283,20 +311,9 @@ export const register: Register = on => {
     // A (re)load starts with no server: the one an earlier load ran died with it.
     await update($, boardA, () => null)
     // A reopened session (--resume keeps its id) gets its plan back; a module reload still holds it.
-    const saved = (await readSaved($))[await $.session.id()]
+    sessionOf = await $.session.id()
+    const saved = (await readSaved($))[sessionOf]
     if (saved && !(await read($, planA))) await restorePlan($, saved.plan, 'the session was closed and reopened, and its plan is back: go on from its first open step')
-    return next(e)
-  })
-
-  // /resume inside a running session swaps the conversation without a new session.start.
-  on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'resume') {
-      const saved = (await readSaved($))[e.session_id]
-      await update($, notesA, () => [])
-      if (saved) await restorePlan($, saved.plan, 'the session was resumed, and its plan is back: go on from its first open step')
-      else await update($, planA, () => null)
-      scheduleLive($)
-    }
     return next(e)
   })
 
@@ -338,6 +355,12 @@ export const register: Register = on => {
       const task: BgTask = { ...background, label: background.label.replace(/\s+/g, ' ').slice(0, 120), status: 'running', startedAt: now }
       await update($, tasksA, list => [...list.filter(t => t.id !== task.id), task].slice(-30))
       scheduleLive($)
+    }
+    // A task Claude stops sends no notice; the stop's own input names it (the classic Stop hook can be skipped).
+    if (String(e.tool) === 'TaskStop' && ran.deny === undefined) {
+      const input = e as unknown as { task_id?: unknown; shell_id?: unknown }
+      const stopped = typeof input.task_id === 'string' ? input.task_id : typeof input.shell_id === 'string' ? input.shell_id : ''
+      if (stopped) await endTask($, stopped, false)
     }
 
     // The person's plan edits reach Claude here, on its next action, whatever tool it is. A denied call carries
@@ -393,6 +416,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    await followSession($)
     if (e.origin.kind === 'task-notification') {
       const id = /<task-id>([^<]+)<\/task-id>/.exec(e.text)?.[1]
       const status = /<status>([^<]+)<\/status>/.exec(e.text)?.[1] ?? ''
@@ -450,16 +474,23 @@ export const register: Register = on => {
 
   // A new session that carries on earlier work: the latest unfinished plan of the same project, from another session.
   on('command.run', { command: 'board-restore' }, async $ => {
+    const current = await read($, planA)
+    if (current && isOpen(current)) {
+      const p = progress(current)
+      return { text: `omniboard: this session already has an unfinished plan, "${current.title}" (${p.done}/${p.total} done). Stop it from the board first to bring back another one.` }
+    }
     const id = await $.session.id()
     const here = await project($)
-    const found = Object.entries(await readSaved($))
-      .filter(([key, s]) => key !== id && s.project === here && isOpen(s.plan))
-      .sort((a, b) => b[1].savedAt - a[1].savedAt)[0]
-    if (!found) return { text: `omniboard: no unfinished plan saved for ${here}.` }
-    const { plan, savedAt } = found[1]
+    const others = Object.entries(await readSaved($))
+      .filter(([key, s]) => key !== id && isOpen(s.plan))
+      .sort((a, b) => b[1].savedAt - a[1].savedAt)
+    // The folder a session runs in can change (a window opened on the parent folder): another project's plan is the fallback.
+    const found = others.find(([, s]) => s.project === here) ?? others[0]
+    if (!found) return { text: 'omniboard: no unfinished plan saved from another session.' }
+    const { plan, savedAt, project: from } = found[1]
     await restorePlan($, plan, `the user brought back "${plan.title}", a plan left unfinished in an earlier session: go on from its first open step`)
     const p = progress(plan)
-    return { text: `omniboard: restored "${plan.title}" (${p.done}/${p.total} done), last changed ${new Date(savedAt).toLocaleString()}. Claude reads it with your next message.` }
+    return { text: `omniboard: restored "${plan.title}" (${p.done}/${p.total} done) from ${from === here ? 'this project' : `the project ${from}`}, last changed ${new Date(savedAt).toLocaleString()}. Claude reads it with your next message.` }
   })
 
   // ---- band above the prompt ----------------------------------------------------------------------

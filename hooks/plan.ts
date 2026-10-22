@@ -11,6 +11,8 @@ export type Edit =
   | { op: 'remove'; id: string }
   /** `before` null: to the end of the step's level. */
   | { op: 'move'; id: string; before: string | null }
+  /** Ends the whole plan where it is. */
+  | { op: 'stop' }
 
 export type Outcome = { plan: Plan; note: string } | { error: string }
 
@@ -98,6 +100,7 @@ export function applyEdit(plan: Plan, edit: Edit, by: By = 'user'): Outcome {
   if (isComplete(plan) && by === 'user') return { error: 'The plan is complete: it can no longer change.' }
   if (edit.op === 'add') return add(plan, edit.after, edit.text, by === 'user')
   if (edit.op === 'insert') return insert(plan, edit.after, edit.text, by === 'user')
+  if (edit.op === 'stop') return stop(plan)
   const step = find(plan, edit.id)
   if (!step) return { error: `Step ${edit.id} no longer exists.` }
   if (isLocked(plan, step)) return { error: `Step ${section(plan, step)!.id} is done: its section can no longer change.` }
@@ -156,6 +159,13 @@ export function applyEdit(plan: Plan, edit: Edit, by: By = 'user'): Outcome {
       return { plan: { ...plan, steps }, note: `moved step ${step.id} (${quote(step.text)}) ${where}` }
     }
   }
+}
+
+/** Ends the plan where it is: every step still open, the ones in progress too, is skipped, and the plan is complete. */
+export function stop(plan: Plan): Outcome {
+  if (isComplete(plan)) return { error: 'The plan is already complete.' }
+  const open = (s: Step) => s.status === 'pending' || s.status === 'running'
+  return { plan: { ...plan, steps: plan.steps.map(s => (open(s) ? { ...s, status: 'skipped' as const } : s)) }, note: 'stopped the plan: every step still open is skipped' }
 }
 
 /** Adds a micro-step to the section of `after`, right after it. */
