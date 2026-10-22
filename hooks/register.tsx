@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, BgTask, SessionStats } from '../types'
+import type { AgentRun, BgTask, Plan, SessionStats } from '../types'
 import { layout } from './graph'
 import { allowed, applyEdit, describe, mark, newPlan, noteFor, progress } from './plan'
 import type { Edit } from './plan'
@@ -129,11 +129,10 @@ async function recordTurn($: EngineInterface, durationMs: number, used: number) 
   const key = keyOf(await $.session.id(), usage.startedAt)
   const cost = usage.cost?.usd ?? 0
   const current = await read($, sessionA)
-  const repo = await $.session.repo().catch(() => null)
   const base: SessionStats =
     current && current.key === key
       ? current
-      : { key, started: usage.startedAt, project: projectName(repo?.root ?? (await $.session.cwd())), title: '', model: '', cost, lastCost: 0, tokens: 0, agentMs: 0, turns: 0 }
+      : { key, started: usage.startedAt, project: await project($), title: '', model: '', cost, lastCost: 0, tokens: 0, agentMs: 0, turns: 0 }
   const next: SessionStats = {
     ...base,
     model: (await $.session.model().catch(() => '')) || base.model,
@@ -154,7 +153,51 @@ async function recordTurn($: EngineInterface, durationMs: number, used: number) 
 
 function scheduleLive($: EngineInterface) {
   liveTimer?.cancel()
-  liveTimer = $.clock.after(400, () => void writeLive($))
+  liveTimer = $.clock.after(400, () => void Promise.all([writeLive($), savePlan($)]))
+}
+
+// ---- plans kept past the session ----------------------------------------------------------------
+// The session's state ends with it: each plan is also kept on disk under its session's id, so reopening
+// the session (or /board-restore in another) brings it back.
+
+type Saved = Record<string, { plan: Plan; project: string; savedAt: number }>
+let lastSaved = ''
+const isOpen = (plan: Plan) => plan.steps.some(s => s.status === 'pending' || s.status === 'running')
+
+async function readSaved($: EngineInterface): Promise<Saved> {
+  try {
+    return JSON.parse(await $.fs.read(`${await dataDir($)}/plans.json`)) as Saved
+  } catch {
+    return {}
+  }
+}
+
+async function project($: EngineInterface) {
+  const repo = await $.session.repo().catch(() => null)
+  return projectName(repo?.root ?? (await $.session.cwd()))
+}
+
+async function savePlan($: EngineInterface) {
+  const plan = await read($, planA)
+  const json = plan ? JSON.stringify(plan) : ''
+  if (!plan || json === lastSaved) return
+  lastSaved = json
+  const all = await readSaved($)
+  all[await $.session.id()] = { plan, project: await project($), savedAt: await $.clock.now() }
+  // shortcut: keeps the 30 most recently changed plans, plenty to come back to any recent session; older ones go.
+  const kept = Object.fromEntries(Object.entries(all).sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, 30))
+  await $.fs.write(`${await dataDir($)}/plans.json`, JSON.stringify(kept))
+}
+
+/** Puts a saved plan back; Claude reads that it did with the next message or action. */
+async function restorePlan($: EngineInterface, plan: Plan, note: string) {
+  const json = JSON.stringify(plan)
+  if (json === JSON.stringify(await read($, planA))) return
+  lastSaved = json
+  await update($, planA, () => plan)
+  await update($, refusedA, () => null)
+  if (isOpen(plan)) await update($, notesA, () => [note])
+  scheduleLive($)
 }
 
 async function writeLive($: EngineInterface) {
@@ -236,8 +279,24 @@ export const register: Register = on => {
     await $.tool.register(TOOL_SPEC)
     await $.command.register({ name: 'board', description: 'Open the omniboard in the browser: live plan you can edit, agents, statistics' })
     await $.command.register({ name: 'board-import', description: 'Add past Claude Code sessions to the omniboard statistics' })
+    await $.command.register({ name: 'board-restore', description: 'Bring back the latest unfinished omniboard plan of this project from another session' })
     // A (re)load starts with no server: the one an earlier load ran died with it.
     await update($, boardA, () => null)
+    // A reopened session (--resume keeps its id) gets its plan back; a module reload still holds it.
+    const saved = (await readSaved($))[await $.session.id()]
+    if (saved && !(await read($, planA))) await restorePlan($, saved.plan, 'the session was closed and reopened, and its plan is back: go on from its first open step')
+    return next(e)
+  })
+
+  // /resume inside a running session swaps the conversation without a new session.start.
+  on('classic.SessionStart', async ($, e, next) => {
+    if (e.source === 'resume') {
+      const saved = (await readSaved($))[e.session_id]
+      await update($, notesA, () => [])
+      if (saved) await restorePlan($, saved.plan, 'the session was resumed, and its plan is back: go on from its first open step')
+      else await update($, planA, () => null)
+      scheduleLive($)
+    }
     return next(e)
   })
 
@@ -387,6 +446,20 @@ export const register: Register = on => {
     const skip = keyOf(await $.session.id(), usage.startedAt).slice(0, 8)
     const run = await $.process.run(['node', `${$.plugin.root}/scripts/import.mjs`, '--dir', dir, '--skip', skip], { timeoutMs: 600_000 }).catch(err => ({ exitCode: 1, stdout: '', stderr: String(err) }))
     return { text: run.exitCode === 0 ? run.stdout.trim() : `omniboard: import failed. ${run.stderr.trim().slice(0, 400)}` }
+  })
+
+  // A new session that carries on earlier work: the latest unfinished plan of the same project, from another session.
+  on('command.run', { command: 'board-restore' }, async $ => {
+    const id = await $.session.id()
+    const here = await project($)
+    const found = Object.entries(await readSaved($))
+      .filter(([key, s]) => key !== id && s.project === here && isOpen(s.plan))
+      .sort((a, b) => b[1].savedAt - a[1].savedAt)[0]
+    if (!found) return { text: `omniboard: no unfinished plan saved for ${here}.` }
+    const { plan, savedAt } = found[1]
+    await restorePlan($, plan, `the user brought back "${plan.title}", a plan left unfinished in an earlier session: go on from its first open step`)
+    const p = progress(plan)
+    return { text: `omniboard: restored "${plan.title}" (${p.done}/${p.total} done), last changed ${new Date(savedAt).toLocaleString()}. Claude reads it with your next message.` }
   })
 
   // ---- band above the prompt ----------------------------------------------------------------------

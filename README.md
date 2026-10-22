@@ -54,6 +54,14 @@ A local page with two tabs, in a light and a dark theme (it follows your system;
 
 Adds your past sessions to the statistics, from Claude Code's own transcripts (`~/.claude/projects`), plus the rows of ponytail's band ledger if you used it. Run it once; running it again only adds what is new.
 
+### A plan outlives its session
+
+Every change to the plan is also kept on disk, under the session it belongs to. Close a session halfway through a plan (you hit a usage limit, VS Code closed) and reopen it: the plan is back in the band and the board, and Claude is told with your next message to go on from the first open step.
+
+### `/board-restore`
+
+Carrying the work on in a **new** session instead: brings back the latest unfinished plan of the same project from another session, and Claude reads it with your next message.
+
 ## How Claude keeps the plan current
 
 - omniboard gives Claude a tool, `mcp__omniboard__plan`, whose description tells it when to use it: when it carries out an approved plan or any task of three steps or more, it sets the plan, then marks each step started and done. Steps it will run at the same time (subagents started together, say) go in as parallel steps, `2a`, `2b`, ... The tool never asks you for permission.
@@ -78,7 +86,7 @@ The two measures of agent time are close but not identical. A transcript without
 
 ## Privacy and safety
 
-- Everything stays on your machine, in `~/.claude/omniboard/` (`sessions.csv`, the ledger; `live.json`, written only while the board is open). Delete the folder to start over.
+- Everything stays on your machine, in `~/.claude/omniboard/` (`sessions.csv`, the ledger; `plans.json`, the 30 most recently changed plans; `live.json`, written only while the board is open). Delete the folder to start over.
 - The board's server listens on `127.0.0.1` only, on a random port, behind a random token in the address. It accepts plan edits only from its own page, checks every edit, and stops with the session or after 30 minutes without requests. It never runs anything a page sends.
 
 ## Limits

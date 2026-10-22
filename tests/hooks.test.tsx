@@ -2,6 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { newPlan } from '../hooks/plan'
+
 const TOOL = 'mcp__omniboard__plan'
 const BAND = {
   plugin: 'omniboard',
@@ -32,6 +34,14 @@ function engine(on: On) {
   on('fs.read', (_, e) => (e.path in files ? { value: files[e.path]! } : Promise.reject(new Error('missing'))))
   on('fs.write', (_, e) => ((files[e.path] = e.text), { value: undefined }))
   return { files, clock }
+}
+
+// What earlier sessions left in plans.json (the kit's fs keeps paths with backslashes).
+const PLANS = 'C:\\Users\\test\\.claude\\omniboard\\plans.json'
+const leftover = (sessionId: string, title: string) => {
+  const p = newPlan(title, ['Leggere', 'Testare'], 1)
+  p.steps[0]!.status = 'done'
+  return JSON.stringify({ [sessionId]: { plan: p, project: 'Workspace', savedAt: 1 } })
 }
 
 const plan = ($: Engine, input: Record<string, unknown>) =>
@@ -85,6 +95,39 @@ test('the board gets the background tasks, and an edit made in it reaches Claude
   expect(first.context?.join('\n')).toMatch(/\[ \] 1\.1 Lanciare il lint \(added by the user\)/)
   const second = await $.tool.call({ tool: 'Read', file_path: 'y.ts' })
   expect(second.context).toBeUndefined()
+})
+
+test('every change of the plan is kept on disk under the session id', async ($, on) => {
+  const { files, clock } = engine(on)
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  await plan($, { action: 'set', title: 'Rifare auth', steps: ['Leggere', 'Testare'] })
+  await plan($, { action: 'done', id: '1' })
+  await clock.advance(500)
+  const kept = JSON.parse(files[PLANS]!)['2fdd950f-1234']
+  expect(kept.project).toBe('Workspace')
+  expect(kept.plan.steps.map((s: { status: string }) => s.status)).toEqual(['done', 'pending'])
+})
+
+test('a reopened session gets its plan back, and Claude reads that once', async ($, on) => {
+  const { files } = engine(on)
+  files[PLANS] = leftover('2fdd950f-1234', 'Rifare auth')
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+  expect(await ui.find({ type: 'Text', text: /▣ 1\/2/ })).toBeDefined()
+  await ui.unmount()
+  const first = await $.tool.call({ tool: 'Read', file_path: 'x.ts' })
+  expect(first.context?.join('\n')).toMatch(/closed and reopened/)
+  expect(first.context?.join('\n')).toMatch(/\[x\] 1 Leggere/)
+  expect((await $.tool.call({ tool: 'Read', file_path: 'y.ts' })).context).toBeUndefined()
+})
+
+test('/board-restore brings back the unfinished plan of this project from another session', async ($, on) => {
+  const { files } = engine(on)
+  files[PLANS] = leftover('older-session', 'Migrare il db')
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  const run = (await $.command.run({ command: 'board-restore', args: '', origin: { kind: 'composer' } } as never)) as { text?: string }
+  expect(run.text).toMatch(/restored "Migrare il db" \(1\/2 done\)/)
+  expect(String((await plan($, { action: 'get' })).result)).toMatch(/Plan: Migrare il db/)
 })
 
 test('parallel steps come in as an inner list and are marked in the plan Claude reads', async ($, on) => {
