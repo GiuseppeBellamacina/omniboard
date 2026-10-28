@@ -128,6 +128,43 @@ test('a reopened session gets its plan back, and Claude reads that once', async 
   expect((await $.tool.call({ tool: 'Read', file_path: 'y.ts' })).context).toBeUndefined()
 })
 
+test('the band closes with its button, and comes back with a new plan or /board band', async ($, on) => {
+  engine(on)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  await plan($, { action: 'set', title: 'Uno', steps: ['A', 'B'] })
+  const show = async () => {
+    const ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+    const found = (await ui.find({ key: 'board' })) !== undefined
+    return { ui, found }
+  }
+
+  let { ui, found } = await show()
+  expect(found).toBe(true)
+  await ui.press({ key: 'hide' })
+  await ui.unmount()
+  ;({ ui, found } = await show())
+  expect(found).toBe(false)
+  await ui.unmount()
+
+  // A command brings it back at once.
+  const board = async (args: string) => ((await $.command.run({ command: 'board', args, origin: { kind: 'composer' } } as never)) as { text?: string }).text
+  expect(await board('band')).toMatch(/band above the prompt is back/)
+  ;({ ui, found } = await show())
+  expect(found).toBe(true)
+  await ui.press({ key: 'hide' })
+  await ui.unmount()
+
+  // A new plan shows it again.
+  await plan($, { action: 'set', title: 'Due', steps: ['C', 'D', 'E'] })
+  ;({ ui, found } = await show())
+  await ui.unmount()
+  expect(found).toBe(true)
+})
+
 const restore = async ($: Engine) =>
   ((await $.command.run({ command: 'board-restore', args: '', origin: { kind: 'composer' } } as never)) as { text?: string }).text
 

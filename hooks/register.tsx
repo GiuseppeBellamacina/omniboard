@@ -15,6 +15,7 @@ const sessionA = atom({ plugin: 'omniboard', key: 'session' } as const, null)
 const boardA = atom({ plugin: 'omniboard', key: 'board' } as const, null)
 const refusedA = atom({ plugin: 'omniboard', key: 'refused' } as const, null)
 const composingA = atom({ plugin: 'omniboard', key: 'composing' } as const, false)
+const bandHiddenA = atom({ plugin: 'omniboard', key: 'bandHidden' } as const, false)
 
 const TOOL = 'mcp__omniboard__plan'
 
@@ -87,7 +88,11 @@ async function answerTool($: EngineInterface, input: Record<string, unknown>): P
   if (action === 'set') {
     const steps = Array.isArray(input.steps) ? input.steps.map(s => (Array.isArray(s) ? s.map(String) : String(s))) : []
     if (steps.length === 0) problem = 'Give the steps as a list of strings.'
-    else plan = newPlan(String(input.title ?? 'Plan'), steps, now)
+    else {
+      plan = newPlan(String(input.title ?? 'Plan'), steps, now)
+      // A closed band is closed for the plan it was closed on: a new plan shows it again.
+      await update($, bandHiddenA, () => false)
+    }
   } else if (action !== 'get') {
     if (!plan) problem = 'There is no plan yet: call this tool with action "set" first.'
     else {
@@ -449,7 +454,11 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'board' }, async $ => {
+  on('command.run', { command: 'board' }, async ($, e) => {
+    if (e.args.trim().toLowerCase() === 'band') {
+      await update($, bandHiddenA, () => false)
+      return { text: 'omniboard: the band above the prompt is back.' }
+    }
     await openBoard($)
     const url = await read($, boardA)
     return { text: url ? `omniboard: ${url}` : 'omniboard: starting the board in your browser…' }
@@ -501,7 +510,7 @@ export const register: Register = on => {
   // One row while a plan has open steps: its progress, the session's totals and the button to the board.
   // Claude Code draws its "From the plugin" label above any band, its own menus included: so nothing at other times.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await read($, composingA))) return next(e)
+    if (e.props.hasSurvey || (await read($, composingA)) || (await read($, bandHiddenA))) return next(e)
     const plan = await read($, planA)
     if (!plan?.steps.some(s => s.status === 'pending' || s.status === 'running')) return next(e)
     const session = await read($, sessionA)
@@ -521,6 +530,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         <Button key="board" plain label="Omniboard" onPress={() => openBoard($)} />
+        <Button key="hide" plain label="×" onPress={() => update($, bandHiddenA, () => true)} />
       </Box>
     )
     return below ? (

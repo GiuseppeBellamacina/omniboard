@@ -73,6 +73,8 @@ declare module 'claude-code' {
       refused: string | null
       /** The prompt box holds a slash command: the band steps aside for the command list. */
       composing: boolean
+      /** The user closed the band above the prompt: it stays closed until the next plan is set, or `/board band`. */
+      bandHidden: boolean
     }
   }
 }

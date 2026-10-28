@@ -30,8 +30,10 @@ Requires a Claude Code build with plugin function hooks (mods) and [Node.js](htt
 One row, while a plan has open steps (one you approved, or steps Claude set for a longer task): the plan's progress, the session's cost, agent time and tokens, and **Omniboard**, which opens the browser board. With no plan running it does not show, and it steps aside while you type a slash command.
 
 ```text
-▣ 3/7 ■■■□□□□□  │  $4.21 · 12m04s · 1.2M tok                     Omniboard
+▣ 3/7 ■■■□□□□□  │  $4.21 · 12m04s · 1.2M tok                     Omniboard  ×
 ```
+
+The **×** closes the band. It stays closed for that plan: the next plan Claude sets shows it again, and `/board band` brings it back at once. The board in the browser is not affected.
 
 The steps, the subagents and the background tasks are in the board.
 
