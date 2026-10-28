@@ -195,7 +195,7 @@ async function savePlan($: EngineInterface) {
 
 /**
  * /resume inside a running session swaps the conversation under another id with no new session.start (and the
- * classic SessionStart hook can be skipped by another plugin): at each message, a new id brings its own plan, or none.
+ * SessionStart hook can be skipped by another plugin): at each message, a new id brings its own plan, or none.
  */
 async function followSession($: EngineInterface) {
   const id = await $.session.id()
@@ -356,7 +356,7 @@ export const register: Register = on => {
       await update($, tasksA, list => [...list.filter(t => t.id !== task.id), task].slice(-30))
       scheduleLive($)
     }
-    // A task Claude stops sends no notice; the stop's own input names it (the classic Stop hook can be skipped).
+    // A task Claude stops sends no notice; the stop's own input names it.
     if (String(e.tool) === 'TaskStop' && ran.deny === undefined) {
       const input = e as unknown as { task_id?: unknown; shell_id?: unknown }
       const stopped = typeof input.task_id === 'string' ? input.task_id : typeof input.shell_id === 'string' ? input.shell_id : ''
@@ -436,15 +436,6 @@ export const register: Register = on => {
       scheduleLive($)
     }
     return out
-  })
-
-  // At each stop the engine lists what still runs in the background: anything else has ended.
-  on('classic.Stop', async ($, e, next) => {
-    const live = new Set((e.background_tasks ?? []).filter(t => t.status === 'running').map(t => t.id))
-    const now = await $.clock.now()
-    await update($, tasksA, list => list.map(t => (t.status === 'running' && !live.has(t.id) ? { ...t, status: 'done' as const, endedAt: now } : t)))
-    scheduleLive($)
-    return next(e)
   })
 
   on('session.end', async ($, e, next) => {

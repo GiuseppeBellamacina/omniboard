@@ -91,7 +91,7 @@ The two measures of agent time are close but not identical. A transcript without
 
 ## Limits
 
-- **Background tasks**: their end is taken from Claude Code's completion notices and the list it gives at each stop, so a task can show as running for a moment after it ends.
+- **Background tasks**: their end is taken from Claude Code's completion notices and from the stops Claude itself makes, so a task that ends without a notice can keep showing as running until the session ends.
 - **Workflow subagents** are counted in the session's tokens but not listed one by one.
 - **Parallel steps** move together: you can edit, skip or add micro-steps to each branch, but not reorder a branch on its own.
 - **The browser board closes with the Claude Code session** that opened it; `/board` opens it again.
